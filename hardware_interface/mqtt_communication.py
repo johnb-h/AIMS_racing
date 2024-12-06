@@ -1,6 +1,8 @@
 """
 mqtt_communication.py
     MQTT communication file
+Methods
+    MQTTClient
 """
 
 __version__ = '0.0.0'
