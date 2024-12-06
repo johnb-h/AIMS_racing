@@ -1,16 +1,18 @@
 import pygame
 import sys
+import argparse
 
 from manager import Manager
 from scene import Scene
 from states import State
+from constants import RESOLUTION
 
 
 # Main Function
-def main():
+def main(args):
     pygame.init()
-    screen = pygame.display.set_mode((800, 600))
-    pygame.display.set_caption("Scene Manager Example")
+    screen = pygame.display.set_mode(RESOLUTION)
+    pygame.display.set_caption("Evolving Cars")
 
     # Initialize Scene Manager with the starting scene
     manager = Manager(State.MAIN_MENU)
@@ -18,20 +20,30 @@ def main():
 
     clock = pygame.time.Clock()
 
-    while True:
+    running = True
+    while running:
+        dt = clock.tick(60) / 1000.0  # Delta time in seconds
         events = pygame.event.get()
+
         for event in events:
             if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
+                running = False
 
         manager.handle_events(events)
-        manager.update()
+        manager.update(dt)
         manager.draw(screen)
 
         pygame.display.flip()
-        clock.tick(60)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    # parser.add_argument("--x_resolution", type=int, default=1200)
+    # parser.add_argument("--y_resolution", type=int, default=800)
+    args = parser.parse_args()
+    return args
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    main(args)

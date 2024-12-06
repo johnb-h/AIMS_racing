@@ -14,7 +14,7 @@ class MainMenuScene(Scene):
             if ev.type == pygame.MOUSEBUTTONDOWN:
                 self._next_state = State.INSTRUCTIONS
 
-    def update(self):
+    def update(self, dt):
         return self._next_state
 
     def draw(self, screen):

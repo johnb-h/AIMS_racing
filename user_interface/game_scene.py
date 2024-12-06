@@ -1,39 +1,54 @@
 import pygame
+import matplotlib
 
 from scene import Scene
 from states import State
+from race_track import RaceTrack
+from car import Car
+from constants import (
+    WINDOW_WIDTH_IN_M,
+    WINDOW_HEIGHT_IN_M,
+    CONST_STEER,
+    N_CARS
+)
 
 # Game Scene
 class GameScene(Scene):
     def __init__(self):
         super().__init__()
-        self.player_pos = [400, 300]
-        self.player_speed = 5
+        self._track = RaceTrack(
+            width_extent=0.9 * WINDOW_WIDTH_IN_M,
+            length_extent=0.9 * WINDOW_HEIGHT_IN_M,
+            track_width=50,
+        )
+        self._cars = None
+        self._init_cars()        
+
 
     def handle_events(self, events):
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_LEFT]:
-            self.player_pos[0] -= self.player_speed
-        if keys[pygame.K_RIGHT]:
-            self.player_pos[0] += self.player_speed
-        if keys[pygame.K_UP]:
-            self.player_pos[1] -= self.player_speed
-        if keys[pygame.K_DOWN]:
-            self.player_pos[1] += self.player_speed
-
         for ev in events:
             if ev.type == pygame.MOUSEBUTTONDOWN:
                 self._next_state = State.NAME_ENTRY
 
-    def update(self):
+    def update(self, dt):
+        for car in self._cars:
+            #car.is_on_track = self.track.is_on_track(car.pixel_position)
+            car.update(dt)
         return self._next_state
 
     def draw(self, screen):
-        screen.fill((0, 128, 0))  # Green background
-        pygame.draw.rect(screen, (255, 0, 0), (*self.player_pos, 50, 50))
+        self._track.draw(screen)
+        for car in self._cars:
+            car.draw(screen)
 
     def reset(self):
-        print("Resetting Game Scene")
         self._next_state = None
-        self.player_pos = [400, 300]
 
+    def _init_cars(self):
+        # Assign colours according to the matplotlib colours
+        car_colours = matplotlib.cm.get_cmap("tab10")(range(N_CARS))
+        car_colours = [(int(r * 255), int(g * 255), int(b * 255)) for r, g, b, _ in car_colours]
+        
+        self._cars = self._track.spawn_cars_on_starting_line(
+            car_colours, [lambda _: CONST_STEER for _ in range(N_CARS)]
+        )

@@ -22,8 +22,8 @@ class Manager:
     def handle_events(self, events):
         self._scene.handle_events(events)
 
-    def update(self):
-        next_scene = self._scene.update()
+    def update(self, dt):
+        next_scene = self._scene.update(dt)
         if next_scene is not None:
             self.change_scene(next_scene)
 

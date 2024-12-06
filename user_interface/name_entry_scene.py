@@ -20,7 +20,7 @@ class NameEntryScene(Scene):
                 else:
                     self.name += ev.unicode
 
-    def update(self):
+    def update(self, dt):
         return self._next_state
 
     def draw(self, screen):

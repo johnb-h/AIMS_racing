@@ -14,7 +14,7 @@ class InstructionsScene(Scene):
             if ev.type == pygame.MOUSEBUTTONDOWN:
                 self._next_state = State.GAME
 
-    def update(self):
+    def update(self, dt):
         return self._next_state
 
     def draw(self, screen):
