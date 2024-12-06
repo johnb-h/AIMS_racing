@@ -29,5 +29,4 @@ class InstructionsScene(Scene):
             screen.blit(text_surface, (50, 50 + i * 40))
 
     def reset(self):
-        print("Resetting Instructions")
         self._next_state = None

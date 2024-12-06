@@ -1,6 +1,7 @@
-import pygame
-
 from abc import ABC, abstractmethod
+
+from states import State
+from typing import Optional
 
 # Base Scene Class
 class Scene(ABC):
@@ -13,7 +14,7 @@ class Scene(ABC):
         pass
 
     @abstractmethod
-    def update(self):
+    def update(self, dt) -> Optional[State]:
         """Update game state."""
         pass
 

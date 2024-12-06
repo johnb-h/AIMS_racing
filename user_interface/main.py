@@ -1,45 +1,20 @@
-import pygame
+# import pygame
 import sys
 import argparse
 
-from manager import Manager
-from scene import Scene
-from states import State
-from constants import RESOLUTION
+from application_manager import ApplicationManager
 
 
 # Main Function
 def main(args):
-    pygame.init()
-    screen = pygame.display.set_mode(RESOLUTION)
-    pygame.display.set_caption("Evolving Cars")
-
-    # Initialize Scene Manager with the starting scene
-    manager = Manager(State.MAIN_MENU)
-    # manager.current_scene.manager = manager  # Pass manager reference to the scene
-
-    clock = pygame.time.Clock()
-
-    running = True
-    while running:
-        dt = clock.tick(60) / 1000.0  # Delta time in seconds
-        events = pygame.event.get()
-
-        for event in events:
-            if event.type == pygame.QUIT:
-                running = False
-
-        manager.handle_events(events)
-        manager.update(dt)
-        manager.draw(screen)
-
-        pygame.display.flip()
+    application_manager = ApplicationManager(args.window_width, args.window_height)
+    application_manager.run_game_loop()
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    # parser.add_argument("--x_resolution", type=int, default=1200)
-    # parser.add_argument("--y_resolution", type=int, default=800)
+    parser.add_argument("--window_width", type=int, default=1200)
+    parser.add_argument("--window_height", type=int, default=800)
     args = parser.parse_args()
     return args
 

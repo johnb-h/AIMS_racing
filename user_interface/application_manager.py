@@ -1,0 +1,68 @@
+import pygame
+
+from constants import RESOLUTION
+from states import State
+from main_menu_scene import MainMenuScene
+from instructions_scene import InstructionsScene
+from game_scene import GameScene
+from name_entry_scene import NameEntryScene
+
+class ApplicationManager:
+    def __init__(self, window_width=1200, window_height=800):
+        self._window_width = window_width
+        self._window_height = window_height
+        self._init_game(window_width, window_height)
+
+        self._state = State.MAIN_MENU
+        self._scenes = {
+            State.MAIN_MENU: MainMenuScene(),
+            State.INSTRUCTIONS: InstructionsScene(),
+            State.GAME: GameScene(),
+            State.NAME_ENTRY: NameEntryScene()
+        }
+        self._scene = self._scenes[self._state]
+
+    def _init_game(self, window_width, window_height):
+        pygame.init()
+        pygame.display.set_caption("Evolving Cars")
+        self._set_screen(window_width, window_height)
+
+    def _set_screen(self, window_width, window_height):
+        self._screen = pygame.display.set_mode((
+            window_width,
+            window_height
+            ), pygame.RESIZABLE)
+        self._screen_rect = self._screen.get_rect()
+        pygame.display.update()
+
+
+    def run_game_loop(self):
+        clock = pygame.time.Clock()
+        running = True
+
+        while running:
+            dt = clock.tick(60) / 1000.0  # Delta time in seconds
+
+            events = pygame.event.get()
+            for event in events:
+                if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.VIDEORESIZE:
+                    self._set_screen(event.w, event.h)
+            self._scene.handle_events(events)
+
+            next_scene = self._scene.update(dt)
+            if next_scene is not None:
+                self._change_scene(next_scene)
+
+            self._scene.draw(self._screen)
+
+            pygame.display.flip()
+
+        pygame.quit()
+
+    def _change_scene(self, state):
+        self._state = state
+        self._scene = self._scenes[state]
+        self._scene.reset()
+

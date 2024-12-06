@@ -31,6 +31,5 @@ class NameEntryScene(Scene):
         screen.blit(name_surface, (50, 100))
 
     def reset(self):
-        print("Resetting Name Entry")
         self._next_state = None
         self.name = ""

@@ -1,5 +1,5 @@
 import pygame
-import matplotlib
+import matplotlib.cm
 
 from scene import Scene
 from states import State
@@ -21,7 +21,6 @@ class GameScene(Scene):
             length_extent=0.9 * WINDOW_HEIGHT_IN_M,
             track_width=50,
         )
-        self._cars = None
         self._init_cars()        
 
 
