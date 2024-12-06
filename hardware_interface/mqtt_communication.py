@@ -132,31 +132,3 @@ class MQTTClient:
         Disconnects from the MQTT broker
         """
         self._client.disconnect()
-
-
-if __name__ == '__main__':
-    """Example connection"""
-    config = {
-        'broker': '127.0.0.1',
-        'port': 1883,
-        'username': '',
-        'password': '',
-        'keepalive': 60
-    }
-
-    client = MQTTClient(config)
-    client.connect()
-
-    # Start the loop in a separate thread to handle callbacks
-    client.start_loop()
-
-    # Publish and subscribe
-    client.subscribe("test/topic")
-    client.publish_message("test/topic", "Hello MQTT")
-
-    time.sleep(5)
-
-    # Clean up
-    client.stop_loop()
-    client.disconnect()
-

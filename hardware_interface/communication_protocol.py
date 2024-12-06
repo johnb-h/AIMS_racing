@@ -121,11 +121,12 @@ class RaceCar(RaceCommunicationProtocol):
     """
 
     topic: str = "race/car"
+    _msg_name: str = "RaceCar"
 
     def __init__(self, header: str = "", msg_name: str = "", qos: int = 0, car_status: CarStatus = CarStatus.DEFAULT,
                  id: int = -1):
         """Constructor for RaceCar"""
-        super().__init__(header=header, msg_name=msg_name, qos=qos)
+        super().__init__(header=header, msg_name=msg_name if msg_name else self._msg_name, qos=qos)
         self.car_status = car_status
         self.id = id
 
@@ -144,8 +145,7 @@ class RaceCar(RaceCommunicationProtocol):
     @id.setter
     def id(self, value: int):
         if isinstance(value, int):
-            if value > 1:
-                self._id = value
+            self._id = value if value > 0 else -1
         else:
             self._id = -1
 
