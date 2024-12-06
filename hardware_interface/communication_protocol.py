@@ -42,6 +42,7 @@ class RaceCommunicationProtocol:
     Methods
     -------
     serialise
+    get_dict
     deserialise
     """
 
@@ -82,9 +83,9 @@ class RaceCommunicationProtocol:
 
     def serialise(self):
         """Serialise communication ready for MQTT publishing"""
-        return json.dumps(self._get_dict())
+        return json.dumps(self.get_dict())
 
-    def _get_dict(self):
+    def get_dict(self):
         """Returns dictionary representation of the class"""
         return {
             "MNAME": self.msg_name,
@@ -107,11 +108,16 @@ class RaceCar(RaceCommunicationProtocol):
     ...
     Attributes
     ----------
-
+    car_status: CarStatus
+        The status of the car
+    id: int
+        Car ID
     ...
     Methods
     -------
-
+    serialise
+    deserialise
+    get_dict
     """
 
     topic: str = "race/car"
@@ -154,4 +160,25 @@ class RaceCar(RaceCommunicationProtocol):
         else:
             self._car_status = CarStatus.DEFAULT
 
-    
+    def serialise(self):
+        """Serialise communication ready for MQTT publishing"""
+        return json.dumps(self.get_dict())
+
+    def get_dict(self):
+        """Returns dictionary representation of the class"""
+        d = super().get_dict()
+        d.update({
+            "STS": self.car_status.value,
+            "ID": self.id,
+        })
+        return d
+
+    def deserialise(self, mqtt_msg: str):
+        """Deserialise received MQTT message"""
+        super().deserialise(mqtt_msg)
+        json_data = json.loads(mqtt_msg)
+        if "STS" in json_data:
+            self.car_status = CarStatus(json_data.get("STS"))
+        if "ID" in json_data:
+            self.id = json_data.get("ID")
+
