@@ -1,16 +1,13 @@
 """
 communication_protocol.py
-    description
+    Communication protocol module
 Methods
-
-Attributes
-
-Dependencies
-
+    CarStatus
+    RaceCommunicationProtocol
+    RaceCar
 """
 
 __version__ = '0.0.0'
-__organization__ = 'MarineAI'
 __project__ = 'AIMS_racing'
 __tested__ = 'N'
 
@@ -25,7 +22,6 @@ class CarStatus(Enum):
     PRERACE: int = 1
     INRACE: int = 2
     POSTRACE: int = 3
-
 
 
 class RaceCommunicationProtocol:
@@ -118,10 +114,34 @@ class RaceCar(RaceCommunicationProtocol):
 
     """
 
-    def __init__(self, header: str = "", msg_name: str = "", qos: int = 0, car_status: CarStatus):
+    topic: str = "race/car"
+
+    def __init__(self, header: str = "", msg_name: str = "", qos: int = 0, car_status: CarStatus = CarStatus.DEFAULT,
+                 id: int = -1):
         """Constructor for RaceCar"""
         super().__init__(header=header, msg_name=msg_name, qos=qos)
         self.car_status = car_status
+        self.id = id
+
+    @property
+    def id(self):
+        """
+        description
+            Car ID number
+        type
+            int
+        default
+            -1
+        """
+        return self._id
+
+    @id.setter
+    def id(self, value: int):
+        if isinstance(value, int):
+            if value > 1:
+                self._id = value
+        else:
+            self._id = -1
 
     @property
     def car_status(self):
@@ -133,3 +153,5 @@ class RaceCar(RaceCommunicationProtocol):
             self._car_status = value
         else:
             self._car_status = CarStatus.DEFAULT
+
+    
