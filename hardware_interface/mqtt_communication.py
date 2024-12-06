@@ -9,6 +9,7 @@ __version__ = '0.0.0'
 __project__ = 'AIMS_racing'
 __tested__ = 'N'
 
+import queue
 # Standard Packages
 import time
 
@@ -29,7 +30,7 @@ class MQTTClient:
     start_loop
     stop_loop
     disconnect
-
+    queue_empty
     ...
     Attributes
     ----------
@@ -37,6 +38,8 @@ class MQTTClient:
         Configuration dictionary for the broker communication
 
     """
+
+    _max_queue_length: int = 100
 
     def __init__(self, mqtt_config: dict, verbose: bool = False) -> None:
         """
@@ -50,6 +53,7 @@ class MQTTClient:
         self.config = mqtt_config
         self._setup_client()
         self._verbose = verbose
+        self._msg_queue = queue.Queue(maxsize=self._max_queue_length)
 
     def _setup_client(self):
         """
@@ -85,6 +89,7 @@ class MQTTClient:
         """
         if self._verbose:
             print(f"Message received on topic {msg.topic}: {msg.payload.decode()}")
+        self._msg_queue.put((msg.topic, msg.payload.decode()))
 
     def connect(self):
         """
@@ -132,3 +137,12 @@ class MQTTClient:
         Disconnects from the MQTT broker
         """
         self._client.disconnect()
+
+    def queue_empty(self):
+        """Returns bool of if queue is empty"""
+        return self._msg_queue.empty()
+
+    def pop_queue(self):
+        """Pops element from the queue"""
+        if not self.queue_empty():
+            return self._msg_queue.get()
