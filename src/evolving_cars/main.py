@@ -25,17 +25,35 @@ class TrackVisualizer:
 
         # Track setup
         self.track_center = (width // 2, height // 2)
+        track_height = height * 0.7  # Track height
+        track_outer_width = width * 0.8
+        track_inner_width = width * 0.4
+        track_inner_height = track_height * 0.5
+
         self.track_outer = self._generate_oval(
-            self.track_center[0], self.track_center[1], width * 0.8, height * 0.7
+            self.track_center[0], self.track_center[1], track_outer_width, track_height
         )
         self.track_inner = self._generate_oval(
-            self.track_center[0], self.track_center[1], width * 0.4, height * 0.35
+            self.track_center[0],
+            self.track_center[1],
+            track_inner_width,
+            track_inner_height,
         )
 
-        # Finish line setup
+        # Finish line setup - align vertically between inner and outer track
+        outer_top = self.track_center[1] - track_height / 2
+        inner_top = self.track_center[1] - track_inner_height / 2
+        finish_line_center = (
+            outer_top + inner_top
+        ) / 2  # Midpoint between inner and outer track tops
+
+        # Calculate track gap at the top
+        track_gap = abs(
+            outer_top - inner_top
+        )  # Distance between outer and inner track at top
         self.finish_line = [
-            (self.track_center[0], self.track_center[1] - 175 - 40),  # Top
-            (self.track_center[0], self.track_center[1] - 175 + 40),  # Bottom
+            (self.track_center[0], finish_line_center - track_gap / 2),  # Top
+            (self.track_center[0], finish_line_center + track_gap / 2),  # Bottom
         ]
 
         # Evolution setup
