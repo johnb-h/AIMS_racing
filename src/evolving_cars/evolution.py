@@ -3,31 +3,39 @@ from typing import List, Tuple
 import jax
 import jax.numpy as jnp
 import numpy as np
-from evosax import CMA_ES
+from evosax import SNES
 
 
 class CarEvolution:
     def __init__(
         self,
         population_size: int = 5,
-        n_steps: int = 200,
+        n_steps: int = 500,
         track_outer: List[Tuple[float, float]] = None,
         track_inner: List[Tuple[float, float]] = None,
     ):
         self.n_steps = n_steps
-        # Parameters are just control points for steering
-        n_controls = 20  # Number of control points
-        self.param_size = n_controls
 
-        # Initialize CMA-ES strategy with maximization
-        self.strategy = CMA_ES(
+        # Parameters define a grid of steering angles
+        self.grid_size = 8  # 8x8 grid of control points
+        self.param_size = self.grid_size * self.grid_size
+
+        # Track boundaries for interpolation
+        self.track_bounds = (
+            (150, 650),  # x bounds
+            (125, 475),  # y bounds
+        )
+
+        # Initialize SNES strategy with maximization
+        self.strategy = SNES(
             popsize=population_size,
             num_dims=self.param_size,
-            elite_ratio=0.5,
-            maximize=True,  # Now we'll maximize fitness
+            maximize=True,
         )
         self.es_params = self.strategy.default_params
-        self.es_params = self.es_params.replace(sigma_init=1.0)
+        self.es_params = self.es_params.replace(
+            sigma_init=1.0,
+        )  # Increased initial variance
 
         # Initialize state
         rng = jax.random.PRNGKey(0)
@@ -54,55 +62,75 @@ class CarEvolution:
 
         return positions
 
+    def _get_steering_angle(self, x: float, y: float, params: np.ndarray) -> float:
+        """Get steering angle for a given position by interpolating the steering field."""
+        # Convert position to grid coordinates
+        x_min, x_max = self.track_bounds[0]
+        y_min, y_max = self.track_bounds[1]
+
+        # Normalize position to [0, 1]
+        x_norm = (x - x_min) / (x_max - x_min)
+        y_norm = (y - y_min) / (y_max - y_min)
+
+        # Clamp to grid bounds
+        x_norm = np.clip(x_norm, 0, 1)
+        y_norm = np.clip(y_norm, 0, 1)
+
+        # Convert to grid indices
+        x_grid = x_norm * (self.grid_size - 1)
+        y_grid = y_norm * (self.grid_size - 1)
+
+        # Get surrounding grid points
+        x0, x1 = int(x_grid), min(int(x_grid) + 1, self.grid_size - 1)
+        y0, y1 = int(y_grid), min(int(y_grid) + 1, self.grid_size - 1)
+
+        # Get weights for bilinear interpolation
+        wx = x_grid - x0
+        wy = y_grid - y0
+
+        # Get steering values at grid points
+        v00 = params[y0 * self.grid_size + x0]
+        v01 = params[y1 * self.grid_size + x0]
+        v10 = params[y0 * self.grid_size + x1]
+        v11 = params[y1 * self.grid_size + x1]
+
+        # Bilinear interpolation
+        steering = (
+            v00 * (1 - wx) * (1 - wy)
+            + v10 * wx * (1 - wy)
+            + v01 * (1 - wx) * wy
+            + v11 * wx * wy
+        )
+
+        # Convert to angle using sigmoid and scale
+        max_turn = np.pi / 12  # Maximum 15-degree turn per step
+        return self._sigmoid(steering) * max_turn
+
     def _sigmoid(self, x):
         """Convert raw parameter to steering angle using sigmoid."""
-        x = x * 0.2  # Scale input for smoother response
+        x = x * 0.1  # Scale input for smoother response
         return 2.0 / (1.0 + np.exp(-x)) - 1.0
 
     def _generate_trajectory(self, params):
-        """Generate a car trajectory from steering parameters."""
+        """Generate a car trajectory from steering field parameters."""
         # Start at the top of the track
         center_x, center_y = 400, 300  # Track center
         x = center_x  # At the vertical midpoint
-        y = center_y - 175  # Start at the top of the oval (using b=175 from reference)
+        y = center_y - 175  # Start at the top of the oval
         angle = 0  # Facing right
         speed = 4.0  # Constant speed
 
-        # Interpolate control points for smooth steering
-        t = np.linspace(0, 1, len(params))
-        t_fine = np.linspace(0, 1, self.n_steps)
-        raw_steering = np.interp(t_fine, t, params)
-
-        # Convert to steering angles using sigmoid
-        max_turn = np.pi / 12  # Maximum 15-degree turn per step
-        steering = self._sigmoid(raw_steering) * max_turn
-
-        # Apply momentum physics to steering with reference trajectory bias
+        # Apply momentum physics to steering
         positions = []
         angular_momentum = 0.9  # High momentum for smooth turns
         angular_velocity = 0.0
-        reference_bias = 0.1  # Reduced bias towards reference trajectory
 
         for i in range(self.n_steps):
             # Update position
             positions.append((float(x), float(y)))
 
-            # Find nearest point on reference trajectory
-            current_pos = np.array([x, y])
-            ref_points = np.array(self.reference_trajectory)
-            distances = np.linalg.norm(ref_points - current_pos, axis=1)
-            nearest_idx = np.argmin(distances)
-
-            # Get direction to reference point
-            ref_point = ref_points[nearest_idx]
-            to_ref = ref_point - current_pos
-            ref_angle = np.arctan2(to_ref[1], to_ref[0])
-
-            # Blend evolved steering with reference bias
-            angle_diff = (ref_angle - angle + np.pi) % (2 * np.pi) - np.pi
-            target_angular_velocity = (1 - reference_bias) * steering[
-                i
-            ] + reference_bias * (angle_diff * 0.1)
+            # Get steering angle from field
+            target_angular_velocity = self._get_steering_angle(x, y, params)
 
             # Update angle with momentum
             angular_velocity = (
@@ -136,7 +164,16 @@ class CarEvolution:
         # Selected cars get high (good) fitness, others get low (bad) fitness
         fitness = jnp.array([0.0] * self.strategy.popsize)  # Bad fitness
         selected_indices = jnp.array(selected_indices)
-        fitness = fitness.at[selected_indices].set(100.0)  # Good fitness for selected
+
+        # Add regularization to penalize large steering values
+        reg_weight = 1  # Weight of regularization term
+        for i in range(self.strategy.popsize):
+            # L2 regularization on steering parameters
+            steering_penalty = -reg_weight * jnp.mean(self.current_x[i] ** 2)
+            fitness = fitness.at[i].set(steering_penalty)
+
+        # Add selection reward
+        fitness = fitness.at[selected_indices].add(100.0)  # Good fitness for selected
 
         # Update the strategy
         self.state = self.strategy.tell(
