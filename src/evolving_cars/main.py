@@ -12,6 +12,7 @@ class Car:
     positions: List[Tuple[float, float]]
     selected: bool = False
     color: Tuple[int, int, int] = (255, 255, 255)
+    last_position: Tuple[float, float] = (0, 0)
 
 
 class TrackVisualizer:
@@ -20,7 +21,7 @@ class TrackVisualizer:
         self.width = width
         self.height = height
         self.screen = pygame.display.set_mode((width, height))
-        pygame.display.set_caption("Evolutionary Cars")
+        pygame.display.set_caption("Evolving Cars")
         self.clock = pygame.time.Clock()
 
         # Track setup
@@ -48,9 +49,7 @@ class TrackVisualizer:
         ) / 2  # Midpoint between inner and outer track tops
 
         # Calculate track gap at the top
-        track_gap = abs(
-            outer_top - inner_top
-        )  # Distance between outer and inner track at top
+        track_gap = abs(outer_top - inner_top)
         self.finish_line = [
             (self.track_center[0], finish_line_center - track_gap / 2),  # Top
             (self.track_center[0], finish_line_center + track_gap / 2),  # Bottom
@@ -60,7 +59,7 @@ class TrackVisualizer:
         self.evolution = CarEvolution(
             track_outer=self.track_outer,
             track_inner=self.track_inner,
-            slow_down=True,
+            # slow_down=True,
         )
 
         # State variables
@@ -70,7 +69,6 @@ class TrackVisualizer:
         self.generation = 0
         self.show_mean = False
         self.finish_line_crossed = False
-        self.start_time = pygame.time.get_ticks()
         self.finish_time = None
 
         # Visualization cache
@@ -141,7 +139,6 @@ class TrackVisualizer:
         self.simulation_running = True
         self.finish_line_crossed = False
         self.finish_time = None
-        self.start_time = pygame.time.get_ticks()
 
     def _update_mean_trajectory(self):
         """Update the cached mean trajectory visualization."""
@@ -175,10 +172,7 @@ class TrackVisualizer:
                             positions[-2], positions[-1]
                         ):
                             self.finish_line_crossed = True
-                            # Calculate time based on steps at 60fps
-                            self.finish_time = (
-                                up_to_step * 1000
-                            ) / 60  # Convert steps to milliseconds
+                            self.finish_time = up_to_step
                             self.simulation_running = False
                             return True
         return False
@@ -208,11 +202,12 @@ class TrackVisualizer:
             )
 
             # Determine how much of trajectory to draw
-            max_step = (
-                min(crash_step, self.current_step + 1)
-                if crashed
-                else self.current_step + 1
-            )
+            max_step = self.current_step + 1
+            max_step = min(max_step, crash_step)
+            if self.finish_line_crossed:
+                max_step = min(max_step, self.finish_time)
+
+            car.last_position = car.positions[max_step - 1]
             positions = car.positions[:max_step]
 
             # Draw trajectory
@@ -251,7 +246,7 @@ class TrackVisualizer:
                         )
 
                     # Draw crash marker
-                    if crashed and self.current_step >= crash_step:
+                    if crashed and max_step >= crash_step:
                         size = 15
                         pygame.draw.line(
                             trajectory_surface,
@@ -283,11 +278,15 @@ class TrackVisualizer:
         gen_text = font.render(f"Generation: {self.generation}", True, (255, 255, 255))
         self.screen.blit(gen_text, (10, 10))
 
-        # Draw timer
-        if self.finish_time is not None:
-            elapsed_time = self.finish_time / 1000.0  # Convert milliseconds to seconds
+        # Draw timer - only stop if car finished
+        if self.finish_line_crossed and self.finish_time is not None:
+            # Show finish time
+            elapsed_time = self.finish_time
         else:
-            elapsed_time = (pygame.time.get_ticks() - self.start_time) / 1000.0
+            # Show running time
+            elapsed_time = self.current_step
+
+        elapsed_time = elapsed_time / 60
         timer_text = font.render(f"Time: {elapsed_time:.2f}s", True, (255, 255, 255))
         timer_rect = timer_text.get_rect(topright=(self.width - 10, 10))
         self.screen.blit(timer_text, timer_rect)
@@ -317,15 +316,8 @@ class TrackVisualizer:
                     if not car.positions:
                         continue
 
-                    # Only allow selecting crashed cars during simulation
-                    if self.simulation_running and not (
-                        hasattr(self.evolution, "displayed_crashed")
-                        and self.evolution.displayed_crashed[i]
-                    ):
-                        continue
-
                     # Get current car position
-                    pos = car.positions[min(self.current_step, len(car.positions) - 1)]
+                    pos = car.last_position
                     if (
                         np.sqrt(
                             (pos[0] - mouse_pos[0]) ** 2 + (pos[1] - mouse_pos[1]) ** 2
@@ -339,14 +331,17 @@ class TrackVisualizer:
                     if self.simulation_running:
                         # When skipping, run through all steps instantly
                         max_steps = max(len(car.positions) for car in self.cars)
-                        while (
-                            self.simulation_running
-                            and self.current_step < max_steps - 1
-                        ):
+                        if hasattr(self.evolution, "displayed_crash_steps"):
+                            max_steps = max(self.evolution.displayed_crash_steps)
+
+                        while self.current_step < max_steps - 1:
                             self.current_step += 1
                             if self._check_for_finish(self.current_step):
                                 break
-                        self.simulation_running = False
+
+                        # If no car finished, just stop simulation but keep timer running
+                        if not self.finish_line_crossed:
+                            self.simulation_running = False
                     else:
                         selected = [
                             i for i, car in enumerate(self.cars) if car.selected
@@ -364,12 +359,7 @@ class TrackVisualizer:
         running = True
         while running:
             running = self.handle_events()
-
-            # Update
-            if self.simulation_running:
-                max_steps = max(len(car.positions) for car in self.cars)
-                if self.current_step < max_steps - 1:
-                    self.current_step += 1
+            self.current_step += 1
 
             # Draw
             self.screen.fill((0, 0, 0))
