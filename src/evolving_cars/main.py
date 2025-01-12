@@ -34,7 +34,6 @@ class TrackVisualizer:
 
         # Initialize evolution
         self.evolution = CarEvolution(
-            population_size=5,
             track_outer=self.track_outer,
             track_inner=self.track_inner,
         )
@@ -43,6 +42,14 @@ class TrackVisualizer:
         self.current_step = 0
         self.simulation_running = True
         self.generation = 0
+
+        # Cache for mean trajectory visualization
+        self.mean_trajectory_surface = None
+        self.last_generation = -1
+
+        # Create cached track surface
+        self.track_surface = pygame.Surface((width, height), pygame.SRCALPHA)
+        self._draw_static_track()
 
         # Generate initial population
         self.generate_new_population()
@@ -56,6 +63,17 @@ class TrackVisualizer:
             y = cy + height / 2 * np.sin(angle)
             points.append((x, y))
         return points
+
+    def _draw_static_track(self):
+        """Draw the static track elements to a cached surface."""
+        # Draw outer boundary
+        pygame.draw.lines(self.track_surface, (255, 0, 0), True, self.track_outer, 2)
+        # Draw inner boundary
+        pygame.draw.lines(self.track_surface, (255, 0, 0), True, self.track_inner, 2)
+        # Draw reference trajectory
+        ref_traj = self.evolution.get_reference_trajectory()
+        if len(ref_traj) > 1:
+            pygame.draw.lines(self.track_surface, (100, 100, 100), True, ref_traj, 1)
 
     def generate_new_population(self):
         # Generate new population
@@ -90,23 +108,34 @@ class TrackVisualizer:
         else:
             print("Please select at least one car before evolving!")
 
+    def _update_mean_trajectory(self):
+        """Update cached mean trajectory surface if generation changed."""
+        if self.generation == self.last_generation:
+            return
+
+        mean_traj = self.evolution.get_mean_trajectory()
+        if mean_traj and len(mean_traj) > 1:
+            # Create new surface for mean trajectory
+            self.mean_trajectory_surface = pygame.Surface(
+                (self.width, self.height), pygame.SRCALPHA
+            )
+
+            step = 1
+            for i in range(0, len(mean_traj) - step, step):
+                start = mean_traj[i]
+                end = mean_traj[i + step]
+                pygame.draw.line(
+                    self.mean_trajectory_surface, (255, 215, 0, 180), start, end, 2
+                )
+
+        self.last_generation = self.generation
+
     def add_car(self, car: Car):
         self.cars.append(car)
 
     def draw_track(self):
-        # Draw outer boundary
-        pygame.draw.lines(self.screen, (255, 0, 0), True, self.track_outer, 2)
-        # Draw inner boundary
-        pygame.draw.lines(self.screen, (255, 0, 0), True, self.track_inner, 2)
-        # Draw reference trajectory
-        ref_traj = self.evolution.get_reference_trajectory()
-        if len(ref_traj) > 1:
-            pygame.draw.lines(self.screen, (100, 100, 100), True, ref_traj, 1)
-
-        # Draw mean trajectory
-        mean_traj = self.evolution.get_mean_trajectory()
-        if mean_traj and len(mean_traj) > 1:
-            pygame.draw.lines(self.screen, (200, 200, 0), False, mean_traj, 2)
+        """Draw the cached track surface."""
+        self.screen.blit(self.track_surface, (0, 0))
 
     def _get_last_visible_position(self, positions):
         """Get the last position that was within screen bounds."""
@@ -117,10 +146,9 @@ class TrackVisualizer:
         return positions[0]  # Fallback to start position if none visible
 
     def draw_cars(self):
-        # Draw mean trajectory
-        mean_traj = self.evolution.get_mean_trajectory()
-        if mean_traj and len(mean_traj) > 1:
-            pygame.draw.lines(self.screen, (200, 200, 0), False, mean_traj, 2)
+        """Draw cars with optimized rendering."""
+        # Draw trajectories first
+        trajectory_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
 
         for i, car in enumerate(self.cars):
             if len(car.positions) > 1:
@@ -142,89 +170,78 @@ class TrackVisualizer:
                     if crashed
                     else self.current_step + 1
                 )
+
+                # Sample trajectory points for smoother rendering
                 positions = car.positions[:max_step]
                 if len(positions) >= 2:
-                    pygame.draw.lines(self.screen, car.color, False, positions, 3)
-
-                # Draw current position with a larger circle
-                if self.simulation_running:
-                    if max_step > 0:
-                        current_pos = positions[-1]
-                        # Only draw if on screen
-                        if (
-                            0 <= current_pos[0] <= self.width
-                            and 0 <= current_pos[1] <= self.height
-                        ):
-                            # Draw direction indicator
-                            if len(positions) > 1:
-                                prev_pos = positions[-2]
-                                dx = current_pos[0] - prev_pos[0]
-                                dy = current_pos[1] - prev_pos[1]
-                                length = 15
-                                angle = np.arctan2(dy, dx)
-                                tip = current_pos
-                                left = (
-                                    tip[0] - length * np.cos(angle + 2.5),
-                                    tip[1] - length * np.sin(angle + 2.5),
-                                )
-                                right = (
-                                    tip[0] - length * np.cos(angle - 2.5),
-                                    tip[1] - length * np.sin(angle - 2.5),
-                                )
-                                pygame.draw.polygon(
-                                    self.screen, car.color, [tip, left, right]
-                                )
-
-                            # Draw red X if crashed
-                            if crashed:
-                                size = 15
-                                pygame.draw.line(
-                                    self.screen,
-                                    (255, 0, 0),
-                                    (current_pos[0] - size, current_pos[1] - size),
-                                    (current_pos[0] + size, current_pos[1] + size),
-                                    2,
-                                )
-                                pygame.draw.line(
-                                    self.screen,
-                                    (255, 0, 0),
-                                    (current_pos[0] - size, current_pos[1] + size),
-                                    (current_pos[0] + size, current_pos[1] - size),
-                                    2,
-                                )
-                else:
-                    # During selection, show last visible position
-                    visible_pos = self._get_last_visible_position(positions)
-                    # Draw a larger circle for easier selection
-                    pygame.draw.circle(self.screen, car.color, visible_pos, 10)
-                    # Draw an X to indicate if car went offscreen or crashed
-                    if crashed or visible_pos != positions[-1]:
-                        size = 15
-                        color = (255, 0, 0) if crashed else car.color
-                        pygame.draw.line(
-                            self.screen,
-                            color,
-                            (visible_pos[0] - size, visible_pos[1] - size),
-                            (visible_pos[0] + size, visible_pos[1] + size),
-                            2,
-                        )
-                        pygame.draw.line(
-                            self.screen,
-                            color,
-                            (visible_pos[0] - size, visible_pos[1] + size),
-                            (visible_pos[0] + size, visible_pos[1] - size),
-                            2,
+                    step = 1
+                    sampled_positions = positions[::step]
+                    if len(sampled_positions) >= 2:
+                        pygame.draw.lines(
+                            trajectory_surface, car.color, False, sampled_positions, 2
                         )
 
-                # Highlight selected cars with a bright outline
+                # Draw current position
+                if max_step > 0:
+                    current_pos = positions[-1]
+                    if (
+                        0 <= current_pos[0] <= self.width
+                        and 0 <= current_pos[1] <= self.height
+                    ):
+                        # Draw direction indicator only for current position
+                        if len(positions) > 1:
+                            prev_pos = positions[-2]
+                            dx = current_pos[0] - prev_pos[0]
+                            dy = current_pos[1] - prev_pos[1]
+                            length = 15
+                            angle = np.arctan2(dy, dx)
+                            tip = current_pos
+                            left = (
+                                tip[0] - length * np.cos(angle + 2.5),
+                                tip[1] - length * np.sin(angle + 2.5),
+                            )
+                            right = (
+                                tip[0] - length * np.cos(angle - 2.5),
+                                tip[1] - length * np.sin(angle - 2.5),
+                            )
+                            pygame.draw.polygon(
+                                trajectory_surface, car.color, [tip, left, right]
+                            )
+
+                        # Draw red X if crashed
+                        if crashed:
+                            size = 15
+                            pygame.draw.line(
+                                trajectory_surface,
+                                (255, 0, 0),
+                                (current_pos[0] - size, current_pos[1] - size),
+                                (current_pos[0] + size, current_pos[1] + size),
+                                2,
+                            )
+                            pygame.draw.line(
+                                trajectory_surface,
+                                (255, 0, 0),
+                                (current_pos[0] - size, current_pos[1] + size),
+                                (current_pos[0] + size, current_pos[1] - size),
+                                2,
+                            )
+
+                # Highlight selected cars
                 if car.selected:
                     if self.simulation_running and max_step > 0:
                         pos = positions[-1]
                         if 0 <= pos[0] <= self.width and 0 <= pos[1] <= self.height:
-                            pygame.draw.circle(self.screen, (255, 255, 0), pos, 15, 2)
+                            pygame.draw.circle(
+                                trajectory_surface, (255, 255, 0), pos, 15, 2
+                            )
                     else:
                         pos = self._get_last_visible_position(positions)
-                        pygame.draw.circle(self.screen, (255, 255, 0), pos, 15, 2)
+                        pygame.draw.circle(
+                            trajectory_surface, (255, 255, 0), pos, 15, 2
+                        )
+
+        # Blit all trajectories at once
+        self.screen.blit(trajectory_surface, (0, 0))
 
     def draw_ui(self):
         # Draw generation counter
@@ -316,7 +333,16 @@ class TrackVisualizer:
             running = self.handle_events()
 
             self.screen.fill((0, 0, 0))  # Black background
+
+            # Draw track first
             self.draw_track()
+
+            # Update and draw mean trajectory
+            self._update_mean_trajectory()
+            if self.mean_trajectory_surface:
+                self.screen.blit(self.mean_trajectory_surface, (0, 0))
+
+            # Draw cars on top
             self.draw_cars()
             self.draw_ui()
 

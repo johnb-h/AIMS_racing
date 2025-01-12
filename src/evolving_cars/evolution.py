@@ -3,39 +3,52 @@ from typing import List, Tuple
 import jax
 import jax.numpy as jnp
 import numpy as np
-from evosax import SNES
+from evosax import OpenES
 
 
 class CarEvolution:
     def __init__(
         self,
-        population_size: int = 5,
+        population_size: int = 10,
         n_steps: int = 500,
         track_outer: List[Tuple[float, float]] = None,
         track_inner: List[Tuple[float, float]] = None,
     ):
+        self.rng = jax.random.PRNGKey(0)
         self.n_steps = n_steps
 
-        # Parameters define steering angles at control points
-        self.n_control_points = 20  # Number of control points for steering
-        self.param_size = self.n_control_points  # One steering angle per control point
+        # Parameters for multi-scale Gaussian basis functions
+        self.n_centers = 100  # More time offsets for finer control
+        self.n_widths = 3  # Fewer widths, focusing on local control
+        self.n_params = self.n_centers * self.n_widths  # Only Gaussians, no constant
 
-        # Initialize SNES strategy with maximization
-        self.strategy = SNES(
+        # Precompute Gaussian centers and widths
+        self.centers = np.linspace(0, 1, self.n_centers)  # Time offsets
+        # Widths focusing on local control
+        self.widths = np.array([0.01, 0.05, 0.1])
+
+        # Precompute basis function matrix (n_steps × n_params)
+        self.basis_matrix = self._precompute_basis_matrix()
+
+        # Initialize OpenES strategy with maximization
+        self.strategy = OpenES(
             popsize=population_size,
-            num_dims=self.param_size,
+            num_dims=self.n_params,
             maximize=True,
+            opt_name="sgd",
         )
         self.es_params = self.strategy.default_params
-        # Set much higher learning rate and initial variance
+        # Set higher initial variance for better exploration
         self.es_params = self.es_params.replace(
-            sigma_init=2.0,  # Much higher initial variance
-            lrate_sigma=0.01,  # Much higher learning rate (default is 0.01)
+            sigma_init=0.05,  # Lower initial std for finer control
+            opt_params=self.es_params.opt_params.replace(
+                lrate_init=0.003,
+            ),
         )
 
         # Initialize state
-        rng = jax.random.PRNGKey(0)
-        self.state = self.strategy.initialize(rng)
+        self.rng, rng_init = jax.random.split(self.rng)
+        self.state = self.strategy.initialize(rng_init, self.es_params)
 
         # Store track boundaries
         self.track_outer = np.array(track_outer) if track_outer else None
@@ -43,6 +56,33 @@ class CarEvolution:
 
         # Generate reference trajectory
         self.reference_trajectory = self._generate_reference_trajectory()
+
+    def _precompute_basis_matrix(self) -> np.ndarray:
+        """Precompute the basis function matrix for all time steps."""
+        # Time points
+        t = np.linspace(0, 1, self.n_steps)
+
+        # Initialize matrix for Gaussian bases
+        basis_matrix = np.zeros((self.n_steps, self.n_params))
+
+        # Fill in Gaussian basis functions
+        col_idx = 0
+        for width in self.widths:
+            for center in self.centers:
+                # Compute Gaussian activation for all time points at once
+                activation = np.exp(-((t - center) ** 2) / (2 * width**2))
+                basis_matrix[:, col_idx] = activation
+                col_idx += 1
+
+        return basis_matrix
+
+    def _compute_steering_angles(self, params: np.ndarray) -> np.ndarray:
+        """Compute steering angles for all time steps using matrix multiplication."""
+        # Multiply basis matrix by parameters
+        angles = np.dot(self.basis_matrix, params)
+
+        # Apply sigmoid to bound the steering angles
+        return self._sigmoid(angles)
 
     def _generate_reference_trajectory(self) -> List[Tuple[float, float]]:
         """Generate a perfect oval trajectory between inner and outer track."""
@@ -87,8 +127,8 @@ class CarEvolution:
         # Point is valid if it's inside outer ellipse AND outside inner ellipse
         return outer_ellipse <= 1.0 and inner_ellipse >= 1.0
 
-    def _generate_trajectory(self, params):
-        """Generate a car trajectory from sequence of steering angles."""
+    def _generate_trajectory(self, params, check_crashes=True):
+        """Generate a car trajectory from basis function weights."""
         # Start at the top of the track
         center_x, center_y = 400, 300  # Track center
         x = center_x  # At the vertical midpoint
@@ -96,18 +136,12 @@ class CarEvolution:
         angle = 0  # Facing right
         speed = 4.0  # Constant speed
 
-        # Interpolate steering angles for smooth control
-        t_control = np.linspace(0, 1, self.n_control_points)
-        t_fine = np.linspace(0, 1, self.n_steps)
-        raw_steering = np.interp(t_fine, t_control, params)
-
-        # Convert to steering angles using sigmoid
-        max_turn = np.pi / 12  # Maximum 15-degree turn per step
-        steering = self._sigmoid(raw_steering) * max_turn
+        # Precompute all steering angles
+        target_angular_velocities = self._compute_steering_angles(params)
 
         # Apply momentum physics to steering
         positions = []
-        angular_momentum = 0.9  # High momentum for smooth turns
+        angular_momentum = 0.0  # High momentum for smooth turns
         angular_velocity = 0.0
         crashed = False
         crash_step = self.n_steps
@@ -116,19 +150,25 @@ class CarEvolution:
             current_pos = (float(x), float(y))
             positions.append(current_pos)
 
-            # Check for collision
-            if not self._is_inside_track(current_pos):
+            # Check for collision if needed
+            if check_crashes and not self._is_inside_track(current_pos):
                 crashed = True
                 crash_step = i
                 # Fill remaining positions with last valid position
                 positions.extend([current_pos] * (self.n_steps - i - 1))
                 break
 
-            # Update angle with momentum
-            target_angular_velocity = steering[i]
+            # Get precomputed steering angle
+            target_angular_velocity = target_angular_velocities[i]
+
+            # Apply momentum to steering
             momentum_term = angular_momentum * angular_velocity
             target_term = (1 - angular_momentum) * target_angular_velocity
             angular_velocity = momentum_term + target_term
+
+            # Scale the angular velocity to reasonable range
+            max_turn = np.pi / 12  # Maximum 15-degree turn per step
+            angular_velocity = angular_velocity * max_turn
 
             # Update angle
             angle += angular_velocity
@@ -145,8 +185,9 @@ class CarEvolution:
 
     def ask(self):
         """Get a batch of parameters to evaluate."""
-        rng = jax.random.PRNGKey(0)
-        x, self.state = self.strategy.ask(rng, self.state, self.es_params)
+        self.rng, rng_ask = jax.random.split(self.rng)
+        x, self.state = self.strategy.ask(rng_ask, self.state, self.es_params)
+        print(f"x: {x}, es_params: {self.es_params}")
         self.current_x = x
 
         # Generate trajectories from control points
@@ -167,53 +208,32 @@ class CarEvolution:
         fitness = jnp.array([0.0] * self.strategy.popsize)
         selected_indices = jnp.array(selected_indices)
 
-        # Calculate regularization penalties
-        reg_weight = 0.01  # Base regularization weight
-        crash_penalty_multiplier = 10.0  # Stronger regularization after crash
-
+        # Zero out parameters after crashes
+        masked_params = np.array(self.current_x)
         for i in range(self.strategy.popsize):
-            params = self.current_x[i]
-            trajectory = self.trajectories[i]
-            crash_idx = self.crash_steps[i]
-
-            if crash_idx < self.n_steps:
-                # For crashed cars, apply heavy regularization to unused parameters
-                control_point_idx = int(
-                    crash_idx * self.n_control_points / self.n_steps
-                )
-                used_params = params[:control_point_idx]
-                unused_params = params[control_point_idx:]
-
-                # Normal regularization for used parameters
-                used_penalty = -reg_weight * np.mean(used_params**2)
-                # Heavy regularization for unused parameters
-                unused_penalty = (
-                    -reg_weight * crash_penalty_multiplier * np.mean(unused_params**2)
-                )
-                distance_penalty = used_penalty + unused_penalty
-            else:
-                # Normal regularization for successful cars
-                distance_penalty = -reg_weight * np.mean(params**2)
-
-            # Apply penalties to fitness
-            fitness = fitness.at[i].add(distance_penalty)
-            print(f"Car {i}: Distance penalty = {distance_penalty:.3f}")
+            if self.crashed[i]:
+                # Calculate which parameters correspond to time steps after the crash
+                crash_time = self.crash_steps[i] / self.n_steps
+                for j in range(self.n_params):
+                    # Zero out parameters if their Gaussian's center is after the crash
+                    center_idx = j % self.n_centers
+                    if self.centers[center_idx] > crash_time:
+                        masked_params[i, j] = 0.0
 
         # Add selection reward
-        fitness = fitness.at[selected_indices].add(100.0)
+        fitness = fitness.at[selected_indices].add(10.0)
 
         # Debug print for final fitness
         for i in range(self.strategy.popsize):
             selection_reward = 100.0 if i in selected_indices else 0.0
             print(
                 f"Car {i}: Final fitness = {float(fitness[i]):.3f} "
-                f"(Reg: {float(fitness[i] - selection_reward):.3f}, "
-                f"Selection: {selection_reward:.1f})"
+                f"(Selection: {selection_reward:.1f})"
             )
 
-        # Update the strategy
+        # Update the strategy with masked parameters
         self.state = self.strategy.tell(
-            self.current_x, fitness, self.state, self.es_params
+            masked_params, fitness, self.state, self.es_params
         )
 
     def get_reference_trajectory(self):
@@ -221,7 +241,13 @@ class CarEvolution:
         return self.reference_trajectory
 
     def get_mean_trajectory(self):
-        """Get the trajectory generated from the strategy mean."""
+        """Get the complete trajectory generated from the strategy mean."""
+        if not hasattr(self, "state"):
+            return None
+        positions, _, _ = self._generate_trajectory(
+            self.state.mean, check_crashes=False
+        )
+        return positions
 
     def get_current_params(self):
         """Return current parameters for visualization."""
