@@ -15,8 +15,14 @@ class TrajectoryInfo(NamedTuple):
 class CarEvolution:
     def __init__(
         self,
+        track_center: Tuple[float, float],
+        start_position: Tuple[float, float],
+        track_outer_width: float,
+        track_outer_height: float,
+        track_inner_width: float,
+        track_inner_height: float,
         population_size: int = 100,
-        n_steps: int = 500,
+        n_steps: int = 1000,
         track_outer: List[Tuple[float, float]] = None,
         track_inner: List[Tuple[float, float]] = None,
         slow_down: bool = False,
@@ -26,7 +32,12 @@ class CarEvolution:
         self.slow_down = slow_down
 
         # Track setup
-        self.track_center = np.array([400, 300])
+        self.start_position = np.array(start_position)
+        self.track_center = np.array(track_center)
+        self.track_outer_width = track_outer_width
+        self.track_outer_height = track_outer_height
+        self.track_inner_width = track_inner_width
+        self.track_inner_height = track_inner_height
         self.track_outer = np.array(track_outer) if track_outer else None
         self.track_inner = np.array(track_inner) if track_inner else None
 
@@ -64,7 +75,7 @@ class CarEvolution:
             num_dims=self.n_params,
             maximize=True,
             sigma_init=0.2,
-            mean_decay=0.005,
+            mean_decay=0.01,
         )
         del strategy.elite_ratio
 
@@ -82,8 +93,10 @@ class CarEvolution:
     def _is_inside_track(self, position: np.ndarray) -> bool:
         """Check if a position is inside the track boundaries."""
         delta = position - self.track_center
-        outer_ellipse = (delta[0] / 320) ** 2 + (delta[1] / 210) ** 2
-        inner_ellipse = (delta[0] / 160) ** 2 + (delta[1] / 105) ** 2
+        ow, oh = self.track_outer_width / 2, self.track_outer_height / 2
+        outer_ellipse = (delta[0] / ow) ** 2 + (delta[1] / oh) ** 2
+        iw, ih = self.track_inner_width / 2, self.track_inner_height / 2
+        inner_ellipse = (delta[0] / iw) ** 2 + (delta[1] / ih) ** 2
         return outer_ellipse <= 1.0 and inner_ellipse >= 1.0
 
     def _generate_trajectory(
@@ -91,14 +104,13 @@ class CarEvolution:
     ) -> TrajectoryInfo:
         """Generate a car trajectory from parameters."""
         # Initial state
-        pos = np.array([self.track_center[0], self.track_center[1] - 175], dtype=float)
+        pos = np.array(self.start_position, dtype=float)
         angle = 0.0
         angular_velocity = 0.0
         base_speed = 4.0
 
         # Get steering angles
         target_velocities = self._compute_steering_angles(params)
-
         # Generate trajectory
         positions = []
         for i in range(self.n_steps):

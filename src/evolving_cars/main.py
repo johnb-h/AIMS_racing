@@ -16,19 +16,23 @@ class Car:
 
 
 class TrackVisualizer:
-    def __init__(self, width=800, height=600):
+    def __init__(self):
         pygame.init()
-        self.width = width
-        self.height = height
-        self.screen = pygame.display.set_mode((width, height))
+
+        info = pygame.display.Info()
+        self.width = info.current_w  # 1512
+        self.height = info.current_h  # 982
+        self.screen = pygame.display.set_mode(
+            (self.width, self.height), pygame.FULLSCREEN
+        )
         pygame.display.set_caption("Evolving Cars")
         self.clock = pygame.time.Clock()
 
         # Track setup
-        self.track_center = (width // 2, height // 2)
-        track_height = height * 0.7  # Track height
-        track_outer_width = width * 0.8
-        track_inner_width = width * 0.4
+        self.track_center = (self.width // 2, self.height // 2)
+        track_height = self.height * 0.7  # Track height
+        track_outer_width = self.width * 0.8
+        track_inner_width = self.width * 0.4
         track_inner_height = track_height * 0.5
 
         self.track_outer = self._generate_oval(
@@ -57,6 +61,12 @@ class TrackVisualizer:
 
         # Evolution setup
         self.evolution = CarEvolution(
+            track_center=self.track_center,
+            start_position=(self.track_center[0], finish_line_center),
+            track_outer_width=track_outer_width,
+            track_outer_height=track_height,
+            track_inner_width=track_inner_width,
+            track_inner_height=track_inner_height,
             track_outer=self.track_outer,
             track_inner=self.track_inner,
             # slow_down=True,
@@ -65,7 +75,7 @@ class TrackVisualizer:
         # State variables
         self.cars: List[Car] = []
         self.current_step = 0
-        self.simulation_running = True
+        self.cars_driving = True
         self.generation = 0
         self.show_mean = False
         self.finish_line_crossed = False
@@ -136,7 +146,7 @@ class TrackVisualizer:
             for traj in self.evolution.ask()
         ]
         self.current_step = 0
-        self.simulation_running = True
+        self.cars_driving = True
         self.finish_line_crossed = False
         self.finish_time = None
 
@@ -173,7 +183,7 @@ class TrackVisualizer:
                         ):
                             self.finish_line_crossed = True
                             self.finish_time = up_to_step
-                            self.simulation_running = False
+                            self.cars_driving = False
                             return True
         return False
 
@@ -183,6 +193,8 @@ class TrackVisualizer:
 
         # First check for finish line crossing
         self._check_for_finish(self.current_step)
+
+        all_cars_crashed = True
 
         # Then draw cars and handle crashes
         for i, car in enumerate(self.cars):
@@ -200,6 +212,7 @@ class TrackVisualizer:
                 if hasattr(self.evolution, "displayed_crash_steps")
                 else len(car.positions)
             )
+            all_cars_crashed = all_cars_crashed and crash_step < self.current_step
 
             # Determine how much of trajectory to draw
             max_step = self.current_step + 1
@@ -268,6 +281,9 @@ class TrackVisualizer:
                 pos = positions[-1] if positions else car.positions[0]
                 pygame.draw.circle(trajectory_surface, (255, 255, 0), pos, 15, 2)
 
+        if all_cars_crashed:
+            self.cars_driving = False
+
         self.screen.blit(trajectory_surface, (0, 0))
 
     def draw_ui(self):
@@ -294,7 +310,7 @@ class TrackVisualizer:
         # Draw instructions
         instructions = (
             "Click crashed cars to select, press SPACE to end simulation"
-            if self.simulation_running
+            if self.cars_driving
             else "Click cars to select, press SPACE for next generation"
         )
         instructions_text = font.render(instructions, True, (255, 255, 255))
@@ -327,8 +343,10 @@ class TrackVisualizer:
                         car.selected = not car.selected
 
             elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_SPACE:
-                    if self.simulation_running:
+                if event.key == pygame.K_ESCAPE:
+                    return False
+                elif event.key == pygame.K_SPACE:
+                    if self.cars_driving:
                         # When skipping, run through all steps instantly
                         max_steps = max(len(car.positions) for car in self.cars)
                         if hasattr(self.evolution, "displayed_crash_steps"):
@@ -341,7 +359,7 @@ class TrackVisualizer:
 
                         # If no car finished, just stop simulation but keep timer running
                         if not self.finish_line_crossed:
-                            self.simulation_running = False
+                            self.cars_driving = False
                     else:
                         selected = [
                             i for i, car in enumerate(self.cars) if car.selected
@@ -352,6 +370,7 @@ class TrackVisualizer:
                             self.generate_new_population()
                 elif event.key == pygame.K_m:
                     self.show_mean = not self.show_mean
+
         return True
 
     def run(self):
@@ -373,6 +392,9 @@ class TrackVisualizer:
 
             self.draw_cars()
             self.draw_ui()
+
+            # Update the display
+            pygame.display.flip()
 
             pygame.display.flip()
             self.clock.tick(60)
