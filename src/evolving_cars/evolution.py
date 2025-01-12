@@ -3,7 +3,7 @@ from typing import List, Tuple
 import jax
 import jax.numpy as jnp
 import numpy as np
-from evosax import OpenES
+from evosax import SimpleES
 
 
 class CarEvolution:
@@ -18,32 +18,44 @@ class CarEvolution:
         self.n_steps = n_steps
 
         # Parameters for multi-scale Gaussian basis functions
-        self.n_centers = 100  # More time offsets for finer control
-        self.n_widths = 3  # Fewer widths, focusing on local control
-        self.n_params = self.n_centers * self.n_widths  # Only Gaussians, no constant
+        # List of (width, count) tuples, from broad to narrow
+        self.basis_functions = [
+            (0.5, 3),  # Very broad control
+            (0.2, 5),  # Broad control
+            (0.1, 10),  # Medium control
+            (0.05, 20),  # Fine control
+            (0.02, 40),  # Very fine control
+        ]
 
-        # Precompute Gaussian centers and widths
-        self.centers = np.linspace(0, 1, self.n_centers)  # Time offsets
-        # Widths focusing on local control
-        self.widths = np.array([0.01, 0.05, 0.1])
+        # Calculate total number of parameters
+        self.n_params = sum(count for _, count in self.basis_functions)
+
+        # Precompute centers for each scale
+        self.centers = []
+        self.widths = []
+        for width, count in self.basis_functions:
+            centers = np.linspace(0, 1, count)
+            self.centers.extend(centers)
+            self.widths.extend([width] * count)
+
+        self.centers = np.array(self.centers)
+        self.widths = np.array(self.widths)
 
         # Precompute basis function matrix (n_steps × n_params)
         self.basis_matrix = self._precompute_basis_matrix()
 
-        # Initialize OpenES strategy with maximization
-        self.strategy = OpenES(
+        # Initialize SimpleES strategy
+        self.strategy = SimpleES(
             popsize=population_size,
             num_dims=self.n_params,
             maximize=True,
-            opt_name="sgd",
+            sigma_init=0.2,  # Small noise for fine-tuning
         )
+        del self.strategy.elite_ratio
         self.es_params = self.strategy.default_params
-        # Set higher initial variance for better exploration
         self.es_params = self.es_params.replace(
-            sigma_init=0.05,  # Lower initial std for finer control
-            opt_params=self.es_params.opt_params.replace(
-                lrate_init=0.003,
-            ),
+            c_m=0.5,
+            c_sigma=0.5,
         )
 
         # Initialize state
@@ -62,17 +74,13 @@ class CarEvolution:
         # Time points
         t = np.linspace(0, 1, self.n_steps)
 
-        # Initialize matrix for Gaussian bases
+        # Initialize matrix for all basis functions
         basis_matrix = np.zeros((self.n_steps, self.n_params))
 
-        # Fill in Gaussian basis functions
-        col_idx = 0
-        for width in self.widths:
-            for center in self.centers:
-                # Compute Gaussian activation for all time points at once
-                activation = np.exp(-((t - center) ** 2) / (2 * width**2))
-                basis_matrix[:, col_idx] = activation
-                col_idx += 1
+        # Fill in all Gaussian basis functions
+        for i, (center, width) in enumerate(zip(self.centers, self.widths)):
+            activation = np.exp(-((t - center) ** 2) / (2 * width**2))
+            basis_matrix[:, i] = activation
 
         return basis_matrix
 
@@ -210,18 +218,18 @@ class CarEvolution:
 
         # Zero out parameters after crashes
         masked_params = np.array(self.current_x)
-        for i in range(self.strategy.popsize):
-            if self.crashed[i]:
-                # Calculate which parameters correspond to time steps after the crash
-                crash_time = self.crash_steps[i] / self.n_steps
-                for j in range(self.n_params):
-                    # Zero out parameters if their Gaussian's center is after the crash
-                    center_idx = j % self.n_centers
-                    if self.centers[center_idx] > crash_time:
-                        masked_params[i, j] = 0.0
+        # for i in range(self.strategy.popsize):
+        #     if self.crashed[i]:
+        #         # Calculate which parameters correspond to time steps after the crash
+        #         crash_time = self.crash_steps[i] / self.n_steps
+        #         for j in range(self.n_params):
+        #             # Zero out parameters if their Gaussian's center is after the crash
+        #             center_idx = j % self.n_centers
+        #             if self.centers[center_idx] > crash_time:
+        #                 masked_params[i, j] = 0.0
 
         # Add selection reward
-        fitness = fitness.at[selected_indices].add(10.0)
+        fitness = fitness.at[selected_indices].add(1.0)
 
         # Debug print for final fitness
         for i in range(self.strategy.popsize):
@@ -232,6 +240,10 @@ class CarEvolution:
             )
 
         # Update the strategy with masked parameters
+        elite_popsize = len(selected_indices)
+        weights = jnp.zeros(self.strategy.popsize)
+        weights = weights.at[:elite_popsize].set(1 / elite_popsize)
+        self.state = self.state.replace(weights=weights)
         self.state = self.strategy.tell(
             masked_params, fitness, self.state, self.es_params
         )

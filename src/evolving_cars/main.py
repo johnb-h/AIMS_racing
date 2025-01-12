@@ -263,6 +263,38 @@ class TrackVisualizer:
                 self.screen.blit(text, (10, y_offset))
                 y_offset += 25
 
+        # Draw sigma values
+        sigma = self.evolution.get_sigma_vector()
+        if sigma is not None:
+            y_offset += 25
+            sigma_text = "Mutation strength (σ):"
+            text = small_font.render(sigma_text, True, (255, 255, 255))
+            self.screen.blit(text, (10, y_offset))
+            y_offset += 25
+
+            # Plot sigma values as a bar graph
+            max_width = 200  # Maximum width of bars
+            bar_height = 15
+            spacing = 5
+            num_bars = min(10, len(sigma))  # Show at most 10 bars
+            step = len(sigma) // num_bars
+
+            for i in range(num_bars):
+                idx = i * step
+                value = float(sigma[idx])
+                width = int(
+                    max_width * min(value / 0.1, 1.0)
+                )  # Scale to reasonable range
+                pygame.draw.rect(
+                    self.screen,
+                    (0, 255, 0),  # Green color
+                    (10, y_offset + i * (bar_height + spacing), width, bar_height),
+                )
+                text = small_font.render(f"{value:.3f}", True, (255, 255, 255))
+                self.screen.blit(
+                    text, (15 + width, y_offset + i * (bar_height + spacing))
+                )
+
         # Update instructions to reflect new space bar behavior
         font = pygame.font.Font(None, 36)
         if self.simulation_running:
