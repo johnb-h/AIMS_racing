@@ -58,6 +58,7 @@ class TrackVisualizer:
         return points
 
     def generate_new_population(self):
+        # Generate new population
         self.cars.clear()
         trajectories = self.evolution.ask()
 
@@ -102,6 +103,16 @@ class TrackVisualizer:
         if len(ref_traj) > 1:
             pygame.draw.lines(self.screen, (100, 100, 100), True, ref_traj, 1)
 
+        # Draw complete mean trajectory without crash detection
+        mean_traj = self.evolution.get_mean_trajectory()
+        if mean_traj and len(mean_traj) > 1:
+            # Draw dashed yellow line for mean trajectory
+            dash_length = 10
+            for i in range(0, len(mean_traj) - 1, 2):
+                start = mean_traj[i]
+                end = mean_traj[i + 1]
+                pygame.draw.line(self.screen, (200, 200, 0), start, end, 2)
+
     def _get_last_visible_position(self, positions):
         """Get the last position that was within screen bounds."""
         for pos in reversed(positions):
@@ -111,25 +122,42 @@ class TrackVisualizer:
         return positions[0]  # Fallback to start position if none visible
 
     def draw_cars(self):
-        for car in self.cars:
+        for i, car in enumerate(self.cars):
             if len(car.positions) > 1:
-                # Draw trajectory
-                positions = car.positions[: self.current_step + 1]
+                # Get crash status for this car
+                crashed = (
+                    self.evolution.crashed[i]
+                    if hasattr(self.evolution, "crashed")
+                    else False
+                )
+                crash_step = (
+                    self.evolution.crash_steps[i]
+                    if hasattr(self.evolution, "crash_steps")
+                    else len(car.positions)
+                )
+
+                # Draw trajectory up to crash point or current step
+                max_step = (
+                    min(crash_step, self.current_step + 1)
+                    if crashed
+                    else self.current_step + 1
+                )
+                positions = car.positions[:max_step]
                 if len(positions) >= 2:
                     pygame.draw.lines(self.screen, car.color, False, positions, 3)
 
                 # Draw current position with a larger circle
                 if self.simulation_running:
-                    if self.current_step < len(car.positions):
-                        current_pos = car.positions[self.current_step]
+                    if max_step > 0:
+                        current_pos = positions[-1]
                         # Only draw if on screen
                         if (
                             0 <= current_pos[0] <= self.width
                             and 0 <= current_pos[1] <= self.height
                         ):
                             # Draw direction indicator
-                            if self.current_step > 0:
-                                prev_pos = car.positions[self.current_step - 1]
+                            if len(positions) > 1:
+                                prev_pos = positions[-2]
                                 dx = current_pos[0] - prev_pos[0]
                                 dy = current_pos[1] - prev_pos[1]
                                 length = 15
@@ -146,24 +174,43 @@ class TrackVisualizer:
                                 pygame.draw.polygon(
                                     self.screen, car.color, [tip, left, right]
                                 )
+
+                            # Draw red X if crashed
+                            if crashed:
+                                size = 15
+                                pygame.draw.line(
+                                    self.screen,
+                                    (255, 0, 0),
+                                    (current_pos[0] - size, current_pos[1] - size),
+                                    (current_pos[0] + size, current_pos[1] + size),
+                                    2,
+                                )
+                                pygame.draw.line(
+                                    self.screen,
+                                    (255, 0, 0),
+                                    (current_pos[0] - size, current_pos[1] + size),
+                                    (current_pos[0] + size, current_pos[1] - size),
+                                    2,
+                                )
                 else:
                     # During selection, show last visible position
-                    visible_pos = self._get_last_visible_position(car.positions)
+                    visible_pos = self._get_last_visible_position(positions)
                     # Draw a larger circle for easier selection
                     pygame.draw.circle(self.screen, car.color, visible_pos, 10)
-                    # Draw an X to indicate if car went offscreen
-                    if visible_pos != car.positions[-1]:
+                    # Draw an X to indicate if car went offscreen or crashed
+                    if crashed or visible_pos != positions[-1]:
                         size = 15
+                        color = (255, 0, 0) if crashed else car.color
                         pygame.draw.line(
                             self.screen,
-                            car.color,
+                            color,
                             (visible_pos[0] - size, visible_pos[1] - size),
                             (visible_pos[0] + size, visible_pos[1] + size),
                             2,
                         )
                         pygame.draw.line(
                             self.screen,
-                            car.color,
+                            color,
                             (visible_pos[0] - size, visible_pos[1] + size),
                             (visible_pos[0] + size, visible_pos[1] - size),
                             2,
@@ -171,12 +218,12 @@ class TrackVisualizer:
 
                 # Highlight selected cars with a bright outline
                 if car.selected:
-                    if self.simulation_running:
-                        pos = car.positions[self.current_step]
+                    if self.simulation_running and max_step > 0:
+                        pos = positions[-1]
                         if 0 <= pos[0] <= self.width and 0 <= pos[1] <= self.height:
                             pygame.draw.circle(self.screen, (255, 255, 0), pos, 15, 2)
                     else:
-                        pos = self._get_last_visible_position(car.positions)
+                        pos = self._get_last_visible_position(positions)
                         pygame.draw.circle(self.screen, (255, 255, 0), pos, 15, 2)
 
     def draw_ui(self):
@@ -199,25 +246,49 @@ class TrackVisualizer:
                 self.screen.blit(text, (10, y_offset))
                 y_offset += 25
 
-        # Draw instructions
-        if not self.simulation_running:
+        # Update instructions to reflect new space bar behavior
+        font = pygame.font.Font(None, 36)
+        if self.simulation_running:
+            instructions = font.render(
+                "Click crashed cars to select, press SPACE to end simulation",
+                True,
+                (255, 255, 255),
+            )
+        else:
             instructions = font.render(
                 "Click cars to select, press SPACE for next generation",
                 True,
                 (255, 255, 255),
             )
-            self.screen.blit(instructions, (10, self.height - 40))
+        self.screen.blit(instructions, (10, self.height - 40))
 
     def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                # Handle car selection when simulation is finished
-                if not self.simulation_running:
-                    mouse_pos = pygame.mouse.get_pos()
-                    for car in self.cars:
-                        if len(car.positions) > 0:
+                # Handle car selection during simulation (for crashed cars) or when simulation is finished
+                mouse_pos = pygame.mouse.get_pos()
+                for i, car in enumerate(self.cars):
+                    if len(car.positions) > 0:
+                        # During simulation, only allow selecting crashed cars
+                        if self.simulation_running:
+                            if (
+                                hasattr(self.evolution, "crashed")
+                                and self.evolution.crashed[i]
+                            ):
+                                car_pos = car.positions[
+                                    min(self.current_step, len(car.positions) - 1)
+                                ]
+                                distance = np.sqrt(
+                                    (car_pos[0] - mouse_pos[0]) ** 2
+                                    + (car_pos[1] - mouse_pos[1]) ** 2
+                                )
+                                if distance < 15:
+                                    car.selected = not car.selected
+                                    print(f"Car selected: {car.selected}")
+                        else:
+                            # When simulation is finished, allow selecting any car
                             car_pos = self._get_last_visible_position(car.positions)
                             distance = np.sqrt(
                                 (car_pos[0] - mouse_pos[0]) ** 2
@@ -227,8 +298,14 @@ class TrackVisualizer:
                                 car.selected = not car.selected
                                 print(f"Car selected: {car.selected}")
             elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_SPACE and not self.simulation_running:
-                    self.evolve_next_generation()
+                if event.key == pygame.K_SPACE:
+                    # If simulation is running, end it immediately
+                    if self.simulation_running:
+                        self.simulation_running = False
+                        # Set current_step to end of trajectories
+                        self.current_step = max(len(car.positions) for car in self.cars)
+                    else:
+                        self.evolve_next_generation()
         return True
 
     def run(self):
@@ -250,10 +327,3 @@ class TrackVisualizer:
 
             pygame.display.flip()
             self.clock.tick(60)
-
-        pygame.quit()
-
-
-if __name__ == "__main__":
-    visualizer = TrackVisualizer()
-    visualizer.run()
