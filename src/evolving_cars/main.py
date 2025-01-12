@@ -164,10 +164,33 @@ class TrackVisualizer:
                 )
         self.last_generation = self.generation
 
+    def _check_for_finish(self, up_to_step: int) -> bool:
+        """Check if any car has crossed the finish line up to the given step."""
+        if not self.finish_line_crossed:
+            for car in self.cars:
+                if len(car.positions) > 1:
+                    positions = car.positions[: up_to_step + 1]
+                    if len(positions) >= 2:
+                        if self._check_finish_line_crossing(
+                            positions[-2], positions[-1]
+                        ):
+                            self.finish_line_crossed = True
+                            # Calculate time based on steps at 60fps
+                            self.finish_time = (
+                                up_to_step * 1000
+                            ) / 60  # Convert steps to milliseconds
+                            self.simulation_running = False
+                            return True
+        return False
+
     def draw_cars(self):
         """Draw all car trajectories and current positions."""
         trajectory_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
 
+        # First check for finish line crossing
+        self._check_for_finish(self.current_step)
+
+        # Then draw cars and handle crashes
         for i, car in enumerate(self.cars):
             if len(car.positions) <= 1:
                 continue
@@ -191,13 +214,6 @@ class TrackVisualizer:
                 else self.current_step + 1
             )
             positions = car.positions[:max_step]
-
-            # Check finish line crossing
-            if not self.finish_line_crossed and len(positions) >= 2:
-                if self._check_finish_line_crossing(positions[-2], positions[-1]):
-                    self.finish_line_crossed = True
-                    self.finish_time = pygame.time.get_ticks()
-                    self.simulation_running = False
 
             # Draw trajectory
             if len(positions) >= 2:
@@ -268,9 +284,10 @@ class TrackVisualizer:
         self.screen.blit(gen_text, (10, 10))
 
         # Draw timer
-        elapsed_time = (
-            self.finish_time or pygame.time.get_ticks() - self.start_time
-        ) / 1000.0
+        if self.finish_time is not None:
+            elapsed_time = self.finish_time / 1000.0  # Convert milliseconds to seconds
+        else:
+            elapsed_time = (pygame.time.get_ticks() - self.start_time) / 1000.0
         timer_text = font.render(f"Time: {elapsed_time:.2f}s", True, (255, 255, 255))
         timer_rect = timer_text.get_rect(topright=(self.width - 10, 10))
         self.screen.blit(timer_text, timer_rect)
@@ -320,8 +337,16 @@ class TrackVisualizer:
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:
                     if self.simulation_running:
+                        # When skipping, run through all steps instantly
+                        max_steps = max(len(car.positions) for car in self.cars)
+                        while (
+                            self.simulation_running
+                            and self.current_step < max_steps - 1
+                        ):
+                            self.current_step += 1
+                            if self._check_for_finish(self.current_step):
+                                break
                         self.simulation_running = False
-                        self.current_step = max(len(car.positions) for car in self.cars)
                     else:
                         selected = [
                             i for i, car in enumerate(self.cars) if car.selected
@@ -332,8 +357,6 @@ class TrackVisualizer:
                             self.generate_new_population()
                 elif event.key == pygame.K_m:
                     self.show_mean = not self.show_mean
-                    if self.show_mean:
-                        self._update_mean_trajectory()
         return True
 
     def run(self):
@@ -352,8 +375,11 @@ class TrackVisualizer:
             self.screen.fill((0, 0, 0))
             self.screen.blit(self.track_surface, (0, 0))
 
-            if self.show_mean and self.mean_trajectory_surface:
-                self.screen.blit(self.mean_trajectory_surface, (0, 0))
+            # Update and draw mean trajectory if enabled
+            if self.show_mean:
+                self._update_mean_trajectory()
+                if self.mean_trajectory_surface:
+                    self.screen.blit(self.mean_trajectory_surface, (0, 0))
 
             self.draw_cars()
             self.draw_ui()
