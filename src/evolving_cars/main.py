@@ -103,15 +103,10 @@ class TrackVisualizer:
         if len(ref_traj) > 1:
             pygame.draw.lines(self.screen, (100, 100, 100), True, ref_traj, 1)
 
-        # Draw complete mean trajectory without crash detection
+        # Draw mean trajectory
         mean_traj = self.evolution.get_mean_trajectory()
         if mean_traj and len(mean_traj) > 1:
-            # Draw dashed yellow line for mean trajectory
-            dash_length = 10
-            for i in range(0, len(mean_traj) - 1, 2):
-                start = mean_traj[i]
-                end = mean_traj[i + 1]
-                pygame.draw.line(self.screen, (200, 200, 0), start, end, 2)
+            pygame.draw.lines(self.screen, (200, 200, 0), False, mean_traj, 2)
 
     def _get_last_visible_position(self, positions):
         """Get the last position that was within screen bounds."""
@@ -122,6 +117,11 @@ class TrackVisualizer:
         return positions[0]  # Fallback to start position if none visible
 
     def draw_cars(self):
+        # Draw mean trajectory
+        mean_traj = self.evolution.get_mean_trajectory()
+        if mean_traj and len(mean_traj) > 1:
+            pygame.draw.lines(self.screen, (200, 200, 0), False, mean_traj, 2)
+
         for i, car in enumerate(self.cars):
             if len(car.positions) > 1:
                 # Get crash status for this car
@@ -299,8 +299,8 @@ class TrackVisualizer:
                                 print(f"Car selected: {car.selected}")
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:
-                    # If simulation is running, end it immediately
                     if self.simulation_running:
+                        # End simulation immediately
                         self.simulation_running = False
                         # Set current_step to end of trajectories
                         self.current_step = max(len(car.positions) for car in self.cars)
@@ -309,21 +309,23 @@ class TrackVisualizer:
         return True
 
     def run(self):
+        """Main game loop."""
         running = True
         while running:
-            self.screen.fill((0, 0, 0))  # Black background
-
+            # Handle events
             running = self.handle_events()
 
+            self.screen.fill((0, 0, 0))  # Black background
             self.draw_track()
             self.draw_cars()
             self.draw_ui()
 
             if self.simulation_running:
-                self.current_step += 1
-                # Check if all cars have finished their trajectories
-                if all(self.current_step >= len(car.positions) for car in self.cars):
-                    self.simulation_running = False
+                # Update simulation step
+                if self.current_step < max(len(car.positions) for car in self.cars) - 1:
+                    self.current_step += 1
 
             pygame.display.flip()
-            self.clock.tick(60)
+            self.clock.tick(60)  # Limit to 60 FPS
+
+        pygame.quit()

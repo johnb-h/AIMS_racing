@@ -120,14 +120,17 @@ class CarEvolution:
             if not self._is_inside_track(current_pos):
                 crashed = True
                 crash_step = i
+                # Fill remaining positions with last valid position
+                positions.extend([current_pos] * (self.n_steps - i - 1))
                 break
 
             # Update angle with momentum
             target_angular_velocity = steering[i]
-            angular_velocity = (
-                angular_momentum * angular_velocity
-                + (1 - angular_momentum) * target_angular_velocity
-            )
+            momentum_term = angular_momentum * angular_velocity
+            target_term = (1 - angular_momentum) * target_angular_velocity
+            angular_velocity = momentum_term + target_term
+
+            # Update angle
             angle += angular_velocity
 
             # Move in current direction with constant speed
@@ -138,11 +141,6 @@ class CarEvolution:
             x += vx
             y += vy
 
-        # If crashed, fill remaining positions with crash position
-        if crashed:
-            crash_pos = positions[-1]
-            positions.extend([crash_pos] * (self.n_steps - crash_step))
-
         return positions, crashed, crash_step
 
     def ask(self):
@@ -151,13 +149,17 @@ class CarEvolution:
         x, self.state = self.strategy.ask(rng, self.state, self.es_params)
         self.current_x = x
 
-        # Generate trajectories and store crash information
+        # Generate trajectories from control points
         trajectories_and_info = [self._generate_trajectory(p) for p in x]
-        self.trajectories = [t[0] for t in trajectories_and_info]
-        self.crashed = [t[1] for t in trajectories_and_info]
-        self.crash_steps = [t[2] for t in trajectories_and_info]
 
+        # Store trajectories and crash information
+        self.trajectories = [
+            t[0] for t in trajectories_and_info
+        ]  # Store just the positions
+        self.crashed = [t[1] for t in trajectories_and_info]  # Store crash status
+        self.crash_steps = [t[2] for t in trajectories_and_info]  # Store crash steps
         self.current_params = x
+
         return self.trajectories
 
     def tell(self, selected_indices: List[int]):
@@ -166,19 +168,21 @@ class CarEvolution:
         selected_indices = jnp.array(selected_indices)
 
         # Calculate regularization penalties
-        reg_weight = 1  # Base regularization weight
+        reg_weight = 0.01  # Base regularization weight
         crash_penalty_multiplier = 10.0  # Stronger regularization after crash
 
         for i in range(self.strategy.popsize):
             params = self.current_x[i]
+            trajectory = self.trajectories[i]
+            crash_idx = self.crash_steps[i]
 
-            if self.crashed[i]:
+            if crash_idx < self.n_steps:
                 # For crashed cars, apply heavy regularization to unused parameters
-                crash_idx = int(
-                    self.crash_steps[i] * self.n_control_points / self.n_steps
+                control_point_idx = int(
+                    crash_idx * self.n_control_points / self.n_steps
                 )
-                used_params = params[:crash_idx]
-                unused_params = params[crash_idx:]
+                used_params = params[:control_point_idx]
+                unused_params = params[control_point_idx:]
 
                 # Normal regularization for used parameters
                 used_penalty = -reg_weight * np.mean(used_params**2)
@@ -186,13 +190,13 @@ class CarEvolution:
                 unused_penalty = (
                     -reg_weight * crash_penalty_multiplier * np.mean(unused_params**2)
                 )
-
                 distance_penalty = used_penalty + unused_penalty
             else:
                 # Normal regularization for successful cars
                 distance_penalty = -reg_weight * np.mean(params**2)
 
-            fitness = fitness.at[i].set(distance_penalty)
+            # Apply penalties to fitness
+            fitness = fitness.at[i].add(distance_penalty)
             print(f"Car {i}: Distance penalty = {distance_penalty:.3f}")
 
         # Add selection reward
@@ -202,7 +206,9 @@ class CarEvolution:
         for i in range(self.strategy.popsize):
             selection_reward = 100.0 if i in selected_indices else 0.0
             print(
-                f"Car {i}: Final fitness = {float(fitness[i]):.3f} (Reg: {float(fitness[i] - selection_reward):.3f}, Selection: {selection_reward:.1f})"
+                f"Car {i}: Final fitness = {float(fitness[i]):.3f} "
+                f"(Reg: {float(fitness[i] - selection_reward):.3f}, "
+                f"Selection: {selection_reward:.1f})"
             )
 
         # Update the strategy
@@ -214,6 +220,9 @@ class CarEvolution:
         """Return the reference trajectory for visualization."""
         return self.reference_trajectory
 
+    def get_mean_trajectory(self):
+        """Get the trajectory generated from the strategy mean."""
+
     def get_current_params(self):
         """Return current parameters for visualization."""
         return self.current_params if hasattr(self, "current_params") else None
@@ -221,48 +230,3 @@ class CarEvolution:
     def get_sigma_vector(self):
         """Return the current sigma vector from the strategy."""
         return self.state.sigma
-
-    def get_mean_trajectory(self):
-        """Get the trajectory generated from the strategy mean."""
-        if not hasattr(self, "state"):
-            return None
-
-        # Get mean parameters
-        x = self.state.mean
-
-        # Interpolate steering angles for smooth control
-        t_control = np.linspace(0, 1, self.n_control_points)
-        t_fine = np.linspace(0, 1, self.n_steps)
-        raw_steering = np.interp(t_fine, t_control, x)
-
-        # Generate full trajectory without crash detection
-        positions = []
-        angle = 0.0
-        pos = (400, 125)  # Start at top of track
-        speed = 4.0
-
-        # Convert to steering angles using sigmoid
-        max_turn = np.pi / 12  # Maximum 15-degree turn per step
-        steering = self._sigmoid(raw_steering) * max_turn
-
-        # Apply momentum physics to steering
-        angular_momentum = 0.9
-        angular_velocity = 0.0
-
-        for t in range(self.n_steps):
-            positions.append(pos)
-
-            # Update angle with momentum
-            target_angular_velocity = steering[t]
-            angular_velocity = (
-                angular_momentum * angular_velocity
-                + (1 - angular_momentum) * target_angular_velocity
-            )
-            angle += angular_velocity
-
-            # Move in current direction
-            dx = speed * np.cos(angle)
-            dy = speed * np.sin(angle)
-            pos = (pos[0] + dx, pos[1] + dy)
-
-        return positions
