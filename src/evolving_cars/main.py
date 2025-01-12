@@ -320,6 +320,10 @@ class TrackVisualizer:
         mean_text = font.render("(m) show population mean", True, (255, 255, 255))
         self.screen.blit(mean_text, (10, self.height - 80))
 
+        # Draw exit instruction
+        exit_text = font.render("(esc) exit", True, (255, 255, 255))
+        self.screen.blit(exit_text, (10, self.height - 120))
+
     def handle_events(self):
         """Handle user input events."""
         for event in pygame.event.get():

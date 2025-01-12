@@ -8,7 +8,7 @@ This project uses PDM for dependency management. To install:
 
 1. Install PDM if you haven't already:
 ```bash
-pip install pdm
+curl -sSL https://pdm-project.org/install-pdm.py | python3 -
 ```
 
 2. Install project dependencies:
@@ -20,7 +20,7 @@ pdm install
 
 Run the visualization:
 ```bash
-pdm run python main.py
+pdm run python run.py
 ```
 
 ### Controls
@@ -35,7 +35,4 @@ The project uses:
 - JAX for efficient numerical operations
 - Pygame for visualization
 
-Cars are evolved using CMA-ES (Covariance Matrix Adaptation Evolution Strategy), with their trajectories optimized based on:
-1. Distance traveled
-2. Staying within track boundaries
-3. Movement smoothness 
+Cars are evolved using a simple ES (Evolution Strategy), with their trajectories optimized based on your selection. 
