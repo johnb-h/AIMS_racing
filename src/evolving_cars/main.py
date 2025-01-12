@@ -42,6 +42,17 @@ class TrackVisualizer:
         self.current_step = 0
         self.simulation_running = True
         self.generation = 0
+        self.show_mean = False
+        self.start_time = pygame.time.get_ticks()
+        self.finish_time = None
+
+        # Define finish line coordinates (vertical line)
+        center_x, center_y = width // 2, height // 2
+        self.finish_line = [
+            (center_x, center_y - 175 - 40),  # Top point
+            (center_x, center_y - 175 + 40),  # Bottom point
+        ]
+        self.finish_line_crossed = False
 
         # Cache for mean trajectory visualization
         self.mean_trajectory_surface = None
@@ -70,10 +81,39 @@ class TrackVisualizer:
         pygame.draw.lines(self.track_surface, (255, 0, 0), True, self.track_outer, 2)
         # Draw inner boundary
         pygame.draw.lines(self.track_surface, (255, 0, 0), True, self.track_inner, 2)
-        # Draw reference trajectory
-        ref_traj = self.evolution.get_reference_trajectory()
-        if len(ref_traj) > 1:
-            pygame.draw.lines(self.track_surface, (100, 100, 100), True, ref_traj, 1)
+        # Draw finish line (black and white striped)
+        stripe_height = 8
+        total_height = self.finish_line[1][1] - self.finish_line[0][1]
+        num_stripes = total_height // stripe_height
+        for i in range(int(num_stripes)):
+            start_y = self.finish_line[0][1] + i * stripe_height
+            end_y = start_y + stripe_height
+            if end_y > self.finish_line[1][1]:
+                end_y = self.finish_line[1][1]
+            color = (255, 255, 255) if i % 2 == 0 else (0, 0, 0)
+            pygame.draw.line(
+                self.track_surface,
+                color,
+                (self.finish_line[0][0], start_y),
+                (self.finish_line[0][0], end_y),
+                4,
+            )
+
+    def _check_finish_line_crossing(self, prev_pos, current_pos):
+        """Check if a line segment crosses the finish line."""
+
+        def ccw(A, B, C):
+            return (C[1] - A[1]) * (B[0] - A[0]) > (B[1] - A[1]) * (C[0] - A[0])
+
+        def intersect(A, B, C, D):
+            return ccw(A, C, D) != ccw(B, C, D) and ccw(A, B, C) != ccw(A, B, D)
+
+        # Only check if car is moving rightward (to avoid false positives when starting)
+        if self.current_step > 50 and prev_pos[0] < current_pos[0]:  # Moving rightward
+            return intersect(
+                prev_pos, current_pos, self.finish_line[0], self.finish_line[1]
+            )
+        return False
 
     def generate_new_population(self):
         # Generate new population
@@ -93,6 +133,9 @@ class TrackVisualizer:
 
         self.current_step = 0
         self.simulation_running = True
+        self.finish_line_crossed = False
+        self.finish_time = None
+        self.start_time = pygame.time.get_ticks()
 
     def evolve_next_generation(self):
         # Get indices of selected cars
@@ -154,13 +197,13 @@ class TrackVisualizer:
             if len(car.positions) > 1:
                 # Get crash status for this car
                 crashed = (
-                    self.evolution.crashed[i]
-                    if hasattr(self.evolution, "crashed")
+                    self.evolution.displayed_crashed[i]
+                    if hasattr(self.evolution, "displayed_crashed")
                     else False
                 )
                 crash_step = (
-                    self.evolution.crash_steps[i]
-                    if hasattr(self.evolution, "crash_steps")
+                    self.evolution.displayed_crash_steps[i]
+                    if hasattr(self.evolution, "displayed_crash_steps")
                     else len(car.positions)
                 )
 
@@ -174,6 +217,15 @@ class TrackVisualizer:
                 # Sample trajectory points for smoother rendering
                 positions = car.positions[:max_step]
                 if len(positions) >= 2:
+                    # Check for finish line crossing
+                    if not self.finish_line_crossed and max_step > 1:
+                        prev_pos = positions[-2]
+                        current_pos = positions[-1]
+                        if self._check_finish_line_crossing(prev_pos, current_pos):
+                            self.finish_line_crossed = True
+                            self.finish_time = pygame.time.get_ticks()
+                            self.simulation_running = False
+
                     step = 1
                     sampled_positions = positions[::step]
                     if len(sampled_positions) >= 2:
@@ -208,8 +260,8 @@ class TrackVisualizer:
                                 trajectory_surface, car.color, [tip, left, right]
                             )
 
-                        # Draw red X if crashed
-                        if crashed:
+                        # Draw red X only if car has crashed and we've reached the crash step
+                        if crashed and self.current_step >= crash_step:
                             size = 15
                             pygame.draw.line(
                                 trajectory_surface,
@@ -244,59 +296,23 @@ class TrackVisualizer:
         self.screen.blit(trajectory_surface, (0, 0))
 
     def draw_ui(self):
-        # Draw generation counter
         font = pygame.font.Font(None, 36)
+
+        # Draw generation counter
         gen_text = font.render(f"Generation: {self.generation}", True, (255, 255, 255))
         self.screen.blit(gen_text, (10, 10))
 
-        # Draw steering parameters for each car
-        params = self.evolution.get_current_params()
-        if params is not None:
-            y_offset = 50
-            small_font = pygame.font.Font(None, 24)
-            for i, (car, param_set) in enumerate(zip(self.cars, params)):
-                # Show first 5 steering values
-                param_text = f"Car {i+1} steering: "
-                param_text += " ".join([f"{p:.2f}" for p in param_set[:5]])
-                color = car.color if car.selected else (150, 150, 150)
-                text = small_font.render(param_text, True, color)
-                self.screen.blit(text, (10, y_offset))
-                y_offset += 25
+        # Draw timer in top right with hundredths of a second
+        if self.finish_time is None:
+            elapsed_time = (pygame.time.get_ticks() - self.start_time) / 1000.0
+        else:
+            elapsed_time = (self.finish_time - self.start_time) / 1000.0
+        timer_text = font.render(f"Time: {elapsed_time:.2f}s", True, (255, 255, 255))
+        timer_rect = timer_text.get_rect()
+        timer_rect.topright = (self.width - 10, 10)
+        self.screen.blit(timer_text, timer_rect)
 
-        # Draw sigma values
-        sigma = self.evolution.get_sigma_vector()
-        if sigma is not None:
-            y_offset += 25
-            sigma_text = "Mutation strength (σ):"
-            text = small_font.render(sigma_text, True, (255, 255, 255))
-            self.screen.blit(text, (10, y_offset))
-            y_offset += 25
-
-            # Plot sigma values as a bar graph
-            max_width = 200  # Maximum width of bars
-            bar_height = 15
-            spacing = 5
-            num_bars = min(10, len(sigma))  # Show at most 10 bars
-            step = len(sigma) // num_bars
-
-            for i in range(num_bars):
-                idx = i * step
-                value = float(sigma[idx])
-                width = int(
-                    max_width * min(value / 0.1, 1.0)
-                )  # Scale to reasonable range
-                pygame.draw.rect(
-                    self.screen,
-                    (0, 255, 0),  # Green color
-                    (10, y_offset + i * (bar_height + spacing), width, bar_height),
-                )
-                text = small_font.render(f"{value:.3f}", True, (255, 255, 255))
-                self.screen.blit(
-                    text, (15 + width, y_offset + i * (bar_height + spacing))
-                )
-
-        # Update instructions to reflect new space bar behavior
-        font = pygame.font.Font(None, 36)
+        # Update instructions to reflect all controls
         if self.simulation_running:
             instructions = font.render(
                 "Click crashed cars to select, press SPACE to end simulation",
@@ -311,6 +327,12 @@ class TrackVisualizer:
             )
         self.screen.blit(instructions, (10, self.height - 40))
 
+        # Add mean trajectory toggle instruction
+        mean_instructions = font.render(
+            "(m) show population mean", True, (255, 255, 255)
+        )
+        self.screen.blit(mean_instructions, (10, self.height - 80))
+
     def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -323,8 +345,8 @@ class TrackVisualizer:
                         # During simulation, only allow selecting crashed cars
                         if self.simulation_running:
                             if (
-                                hasattr(self.evolution, "crashed")
-                                and self.evolution.crashed[i]
+                                hasattr(self.evolution, "displayed_crashed")
+                                and self.evolution.displayed_crashed[i]
                             ):
                                 car_pos = car.positions[
                                     min(self.current_step, len(car.positions) - 1)
@@ -335,7 +357,6 @@ class TrackVisualizer:
                                 )
                                 if distance < 15:
                                     car.selected = not car.selected
-                                    print(f"Car selected: {car.selected}")
                         else:
                             # When simulation is finished, allow selecting any car
                             car_pos = self._get_last_visible_position(car.positions)
@@ -345,7 +366,6 @@ class TrackVisualizer:
                             )
                             if distance < 15:
                                 car.selected = not car.selected
-                                print(f"Car selected: {car.selected}")
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:
                     if self.simulation_running:
@@ -355,6 +375,10 @@ class TrackVisualizer:
                         self.current_step = max(len(car.positions) for car in self.cars)
                     else:
                         self.evolve_next_generation()
+                elif event.key == pygame.K_m:
+                    self.show_mean = not self.show_mean
+                    if self.show_mean:
+                        self._update_mean_trajectory()
         return True
 
     def run(self):
@@ -369,10 +393,11 @@ class TrackVisualizer:
             # Draw track first
             self.draw_track()
 
-            # Update and draw mean trajectory
-            self._update_mean_trajectory()
-            if self.mean_trajectory_surface:
-                self.screen.blit(self.mean_trajectory_surface, (0, 0))
+            # Update and draw mean trajectory if enabled
+            if self.show_mean:
+                self._update_mean_trajectory()
+                if self.mean_trajectory_surface:
+                    self.screen.blit(self.mean_trajectory_surface, (0, 0))
 
             # Draw cars on top
             self.draw_cars()

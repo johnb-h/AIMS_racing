@@ -9,22 +9,20 @@ from evosax import SimpleES
 class CarEvolution:
     def __init__(
         self,
-        population_size: int = 10,
+        population_size: int = 100,
         n_steps: int = 500,
         track_outer: List[Tuple[float, float]] = None,
         track_inner: List[Tuple[float, float]] = None,
+        slow_down: bool = False,
     ):
         self.rng = jax.random.PRNGKey(0)
         self.n_steps = n_steps
-
+        self.slow_down = slow_down
         # Parameters for multi-scale Gaussian basis functions
         # List of (width, count) tuples, from broad to narrow
         self.basis_functions = [
-            (0.5, 3),  # Very broad control
-            (0.2, 5),  # Broad control
-            (0.1, 10),  # Medium control
-            (0.05, 20),  # Fine control
             (0.02, 40),  # Very fine control
+            (0.01, 100),  # Very very fine control
         ]
 
         # Calculate total number of parameters
@@ -50,12 +48,13 @@ class CarEvolution:
             num_dims=self.n_params,
             maximize=True,
             sigma_init=0.2,  # Small noise for fine-tuning
+            mean_decay=0.005,
         )
         del self.strategy.elite_ratio
         self.es_params = self.strategy.default_params
         self.es_params = self.es_params.replace(
             c_m=0.5,
-            c_sigma=0.5,
+            c_sigma=0.3,
         )
 
         # Initialize state
@@ -65,9 +64,6 @@ class CarEvolution:
         # Store track boundaries
         self.track_outer = np.array(track_outer) if track_outer else None
         self.track_inner = np.array(track_inner) if track_inner else None
-
-        # Generate reference trajectory
-        self.reference_trajectory = self._generate_reference_trajectory()
 
     def _precompute_basis_matrix(self) -> np.ndarray:
         """Precompute the basis function matrix for all time steps."""
@@ -92,30 +88,10 @@ class CarEvolution:
         # Apply sigmoid to bound the steering angles
         return self._sigmoid(angles)
 
-    def _generate_reference_trajectory(self) -> List[Tuple[float, float]]:
-        """Generate a perfect oval trajectory between inner and outer track."""
-        positions = []
-        center_x, center_y = 400, 300  # Center of the track
-        a, b = 250, 175  # Oval parameters (horizontal and vertical radii)
-
-        # Generate points along an oval
-        for t in np.linspace(0, 2 * np.pi, self.n_steps):
-            x = center_x + a * np.cos(t)
-            y = center_y + b * np.sin(t)
-            positions.append((float(x), float(y)))
-
-        return positions
-
     def _sigmoid(self, x):
         """Convert raw parameter to steering angle using sigmoid."""
         x = x * 0.2  # Scale input for smoother response
         return 2.0 / (1.0 + np.exp(-x)) - 1.0
-
-    def _get_min_distance_to_reference(self, position: np.ndarray) -> float:
-        """Calculate minimum distance from a point to reference trajectory."""
-        ref_points = np.array(self.reference_trajectory)
-        distances = np.linalg.norm(ref_points - position, axis=1)
-        return np.min(distances)
 
     def _is_inside_track(self, position):
         """Check if a position is inside the track boundaries."""
@@ -142,7 +118,7 @@ class CarEvolution:
         x = center_x  # At the vertical midpoint
         y = center_y - 175  # Start at the top of the oval
         angle = 0  # Facing right
-        speed = 4.0  # Constant speed
+        base_speed = 4.0  # Base speed when going straight
 
         # Precompute all steering angles
         target_angular_velocities = self._compute_steering_angles(params)
@@ -181,9 +157,18 @@ class CarEvolution:
             # Update angle
             angle += angular_velocity
 
-            # Move in current direction with constant speed
-            vx = speed * np.cos(angle)
-            vy = speed * np.sin(angle)
+            current_speed = base_speed
+            if self.slow_down:
+                # Calculate speed based on steering angle
+                # Speed reduction factor: 1.0 when straight, down to 0.3 at maximum turn
+                # Use quadratic reduction for more aggressive slowdown when turning
+                turn_ratio = min(1, abs(angular_velocity) * 10)
+                speed_factor = 1.0 - 0.7 * turn_ratio
+                current_speed = base_speed * speed_factor
+
+            # Move in current direction with variable speed
+            vx = current_speed * np.cos(angle)
+            vy = current_speed * np.sin(angle)
 
             # Update position
             x += vx
@@ -195,62 +180,74 @@ class CarEvolution:
         """Get a batch of parameters to evaluate."""
         self.rng, rng_ask = jax.random.split(self.rng)
         x, self.state = self.strategy.ask(rng_ask, self.state, self.es_params)
-        print(f"x: {x}, es_params: {self.es_params}")
         self.current_x = x
 
-        # Generate trajectories from control points
+        # Generate all trajectories
         trajectories_and_info = [self._generate_trajectory(p) for p in x]
 
-        # Store trajectories and crash information
-        self.trajectories = [
-            t[0] for t in trajectories_and_info
-        ]  # Store just the positions
-        self.crashed = [t[1] for t in trajectories_and_info]  # Store crash status
-        self.crash_steps = [t[2] for t in trajectories_and_info]  # Store crash steps
+        # Store full information
+        self.trajectories = [t[0] for t in trajectories_and_info]
+        self.crashed = [t[1] for t in trajectories_and_info]
+        self.crash_steps = [t[2] for t in trajectories_and_info]
         self.current_params = x
 
-        return self.trajectories
+        # Calculate trajectory lengths (longer is better if not crashed)
+        scores = []
+        for i, (crashed, crash_step) in enumerate(zip(self.crashed, self.crash_steps)):
+            if crashed:
+                scores.append(crash_step)
+            else:
+                scores.append(self.n_steps + 1)  # Non-crashed trajectories are best
+
+        # Get indices of best and worst trajectories
+        sorted_indices = np.argsort(scores)
+        best_indices = sorted_indices[-3:]  # 3 best
+        worst_indices = sorted_indices[:3]  # 3 worst
+
+        # Get 4 random unique indices excluding best and worst
+        middle_indices = sorted_indices[3:-3]
+        self.rng, rng_sample = jax.random.split(self.rng)
+        random_indices = jax.random.choice(
+            rng_sample, middle_indices, shape=(4,), replace=False
+        )
+
+        # Combine indices and get selected trajectories
+        selected_indices = np.concatenate([best_indices, worst_indices, random_indices])
+        selected_trajectories = [self.trajectories[i] for i in selected_indices]
+        self.displayed_indices = selected_indices
+        self.displayed_crashed = [self.crashed[i] for i in selected_indices]
+        self.displayed_crash_steps = [self.crash_steps[i] for i in selected_indices]
+
+        return selected_trajectories
 
     def tell(self, selected_indices: List[int]):
         """Update the evolution strategy based on selected solutions."""
-        fitness = jnp.array([0.0] * self.strategy.popsize)
-        selected_indices = jnp.array(selected_indices)
+        # Map displayed indices back to full population indices
+        selected_full_indices = [self.displayed_indices[i] for i in selected_indices]
 
-        # Zero out parameters after crashes
-        masked_params = np.array(self.current_x)
-        # for i in range(self.strategy.popsize):
-        #     if self.crashed[i]:
-        #         # Calculate which parameters correspond to time steps after the crash
-        #         crash_time = self.crash_steps[i] / self.n_steps
-        #         for j in range(self.n_params):
-        #             # Zero out parameters if their Gaussian's center is after the crash
-        #             center_idx = j % self.n_centers
-        #             if self.centers[center_idx] > crash_time:
-        #                 masked_params[i, j] = 0.0
+        fitness = jnp.array([0.0] * self.strategy.popsize)
+        selected_full_indices = jnp.array(selected_full_indices)
 
         # Add selection reward
-        fitness = fitness.at[selected_indices].add(1.0)
-
-        # Debug print for final fitness
-        for i in range(self.strategy.popsize):
-            selection_reward = 100.0 if i in selected_indices else 0.0
-            print(
-                f"Car {i}: Final fitness = {float(fitness[i]):.3f} "
-                f"(Selection: {selection_reward:.1f})"
-            )
+        fitness = fitness.at[selected_full_indices].add(1.0)
 
         # Update the strategy with masked parameters
-        elite_popsize = len(selected_indices)
+        elite_popsize = len(selected_full_indices)
         weights = jnp.zeros(self.strategy.popsize)
         weights = weights.at[:elite_popsize].set(1 / elite_popsize)
         self.state = self.state.replace(weights=weights)
+
         self.state = self.strategy.tell(
-            masked_params, fitness, self.state, self.es_params
+            self.current_x, fitness, self.state, self.es_params
         )
 
-    def get_reference_trajectory(self):
-        """Return the reference trajectory for visualization."""
-        return self.reference_trajectory
+    def get_current_params(self):
+        """Return current parameters for visualization."""
+        return self.current_params if hasattr(self, "current_params") else None
+
+    def get_sigma_vector(self):
+        """Return the current sigma vector from the strategy."""
+        return self.state.sigma
 
     def get_mean_trajectory(self):
         """Get the complete trajectory generated from the strategy mean."""
@@ -260,11 +257,3 @@ class CarEvolution:
             self.state.mean, check_crashes=False
         )
         return positions
-
-    def get_current_params(self):
-        """Return current parameters for visualization."""
-        return self.current_params if hasattr(self, "current_params") else None
-
-    def get_sigma_vector(self):
-        """Return the current sigma vector from the strategy."""
-        return self.state.sigma
