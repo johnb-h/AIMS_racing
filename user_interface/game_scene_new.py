@@ -4,7 +4,9 @@ from typing import List, Tuple
 import numpy as np
 import pygame
 
-from .evolution import CarEvolution
+from evolution.evolution import CarEvolution
+from user_interface.scene import Scene
+from user_interface.states import State
 
 
 @dataclass
@@ -15,18 +17,13 @@ class Car:
     last_position: Tuple[float, float] = (0, 0)
 
 
-class TrackVisualizer:
+class GameSceneNew(Scene):
     def __init__(self):
-        pygame.init()
-
+        super().__init__()
         info = pygame.display.Info()
-        self.width = info.current_w  # 1512
-        self.height = info.current_h  # 982
-        self.screen = pygame.display.set_mode(
-            (self.width, self.height), pygame.FULLSCREEN
-        )
-        pygame.display.set_caption("Evolving Cars")
-        self.clock = pygame.time.Clock()
+        self.width = info.current_w
+        self.height = info.current_h
+        self._next_state = None
 
         # Track setup
         self.track_center = (self.width // 2, self.height // 2)
@@ -45,18 +42,14 @@ class TrackVisualizer:
             track_inner_height,
         )
 
-        # Finish line setup - align vertically between inner and outer track
+        # Finish line setup
         outer_top = self.track_center[1] - track_height / 2
         inner_top = self.track_center[1] - track_inner_height / 2
-        finish_line_center = (
-            outer_top + inner_top
-        ) / 2  # Midpoint between inner and outer track tops
-
-        # Calculate track gap at the top
+        finish_line_center = (outer_top + inner_top) / 2
         track_gap = abs(outer_top - inner_top)
         self.finish_line = [
-            (self.track_center[0], finish_line_center - track_gap / 2),  # Top
-            (self.track_center[0], finish_line_center + track_gap / 2),  # Bottom
+            (self.track_center[0], finish_line_center - track_gap / 2),
+            (self.track_center[0], finish_line_center + track_gap / 2),
         ]
 
         # Evolution setup
@@ -69,7 +62,6 @@ class TrackVisualizer:
             track_inner_height=track_inner_height,
             track_outer=self.track_outer,
             track_inner=self.track_inner,
-            # slow_down=True,
         )
 
         # State variables
@@ -130,7 +122,6 @@ class TrackVisualizer:
         def ccw(A, B, C):
             return (C[1] - A[1]) * (B[0] - A[0]) > (B[1] - A[1]) * (C[0] - A[0])
 
-        # Only check if moving rightward after initial delay
         if self.current_step > 50 and prev_pos[0] < current_pos[0]:
             return ccw(prev_pos, self.finish_line[0], self.finish_line[1]) != ccw(
                 current_pos, self.finish_line[0], self.finish_line[1]
@@ -160,7 +151,7 @@ class TrackVisualizer:
             self.mean_trajectory_surface = pygame.Surface(
                 (self.width, self.height), pygame.SRCALPHA
             )
-            points = mean_traj[::1]  # Can increase step for optimization
+            points = mean_traj[::1]
             if len(points) >= 2:
                 pygame.draw.lines(
                     self.mean_trajectory_surface,
@@ -187,7 +178,7 @@ class TrackVisualizer:
                             return True
         return False
 
-    def draw_cars(self):
+    def _draw_cars(self, screen):
         """Draw all car trajectories and current positions."""
         trajectory_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
 
@@ -284,28 +275,26 @@ class TrackVisualizer:
         if all_cars_crashed:
             self.cars_driving = False
 
-        self.screen.blit(trajectory_surface, (0, 0))
+        screen.blit(trajectory_surface, (0, 0))
 
-    def draw_ui(self):
+    def _draw_ui(self, screen):
         """Draw UI elements including timer and instructions."""
         font = pygame.font.Font(None, 36)
 
         # Draw generation counter
         gen_text = font.render(f"Generation: {self.generation}", True, (255, 255, 255))
-        self.screen.blit(gen_text, (10, 10))
+        screen.blit(gen_text, (10, 10))
 
-        # Draw timer - only stop if car finished
+        # Draw timer
         if self.finish_line_crossed and self.finish_time is not None:
-            # Show finish time
             elapsed_time = self.finish_time
         else:
-            # Show running time
             elapsed_time = self.current_step
 
         elapsed_time = elapsed_time / 60
         timer_text = font.render(f"Time: {elapsed_time:.2f}s", True, (255, 255, 255))
         timer_rect = timer_text.get_rect(topright=(self.width - 10, 10))
-        self.screen.blit(timer_text, timer_rect)
+        screen.blit(timer_text, timer_rect)
 
         # Draw instructions
         instructions = (
@@ -314,29 +303,23 @@ class TrackVisualizer:
             else "Click cars to select, press SPACE for next generation"
         )
         instructions_text = font.render(instructions, True, (255, 255, 255))
-        self.screen.blit(instructions_text, (10, self.height - 40))
+        screen.blit(instructions_text, (10, self.height - 40))
 
         # Draw mean trajectory toggle instruction
         mean_text = font.render("(m) show population mean", True, (255, 255, 255))
-        self.screen.blit(mean_text, (10, self.height - 80))
+        screen.blit(mean_text, (10, self.height - 80))
 
         # Draw exit instruction
         exit_text = font.render("(esc) exit", True, (255, 255, 255))
-        self.screen.blit(exit_text, (10, self.height - 120))
+        screen.blit(exit_text, (10, self.height - 120))
 
-    def handle_events(self):
-        """Handle user input events."""
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return False
-
-            elif event.type == pygame.MOUSEBUTTONDOWN:
+    def handle_events(self, events):
+        for event in events:
+            if event.type == pygame.MOUSEBUTTONDOWN:
                 mouse_pos = pygame.mouse.get_pos()
-                for i, car in enumerate(self.cars):
+                for car in self.cars:
                     if not car.positions:
                         continue
-
-                    # Get current car position
                     pos = car.last_position
                     if (
                         np.sqrt(
@@ -348,59 +331,48 @@ class TrackVisualizer:
 
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    return False
+                    self._next_state = State.MAIN_MENU
                 elif event.key == pygame.K_SPACE:
-                    if self.cars_driving:
-                        # When skipping, run through all steps instantly
-                        max_steps = max(len(car.positions) for car in self.cars)
-                        if hasattr(self.evolution, "displayed_crash_steps"):
-                            max_steps = max(self.evolution.displayed_crash_steps)
-
-                        while self.current_step < max_steps - 1:
-                            self.current_step += 1
-                            if self._check_for_finish(self.current_step):
-                                break
-
-                        # If no car finished, just stop simulation but keep timer running
-                        if not self.finish_line_crossed:
-                            self.cars_driving = False
-                    else:
-                        selected = [
-                            i for i, car in enumerate(self.cars) if car.selected
-                        ]
-                        if selected:
-                            self.evolution.tell(selected)
-                            self.generation += 1
-                            self.generate_new_population()
+                    self._handle_space_key()
                 elif event.key == pygame.K_m:
                     self.show_mean = not self.show_mean
 
-        return True
+    def _handle_space_key(self):
+        if self.cars_driving:
+            max_steps = max(len(car.positions) for car in self.cars)
+            if hasattr(self.evolution, "displayed_crash_steps"):
+                max_steps = max(self.evolution.displayed_crash_steps)
 
-    def run(self):
-        """Main game loop."""
-        running = True
-        while running:
-            running = self.handle_events()
-            self.current_step += 1
+            while self.current_step < max_steps - 1:
+                self.current_step += 1
+                if self._check_for_finish(self.current_step):
+                    break
 
-            # Draw
-            self.screen.fill((0, 0, 0))
-            self.screen.blit(self.track_surface, (0, 0))
+            if not self.finish_line_crossed:
+                self.cars_driving = False
+        else:
+            selected = [i for i, car in enumerate(self.cars) if car.selected]
+            if selected:
+                self.evolution.tell(selected)
+                self.generation += 1
+                self.generate_new_population()
 
-            # Update and draw mean trajectory if enabled
-            if self.show_mean:
-                self._update_mean_trajectory()
-                if self.mean_trajectory_surface:
-                    self.screen.blit(self.mean_trajectory_surface, (0, 0))
+    def update(self, dt):
+        self.current_step += 1
+        return self._next_state
 
-            self.draw_cars()
-            self.draw_ui()
+    def draw(self, screen):
+        screen.fill((0, 0, 0))
+        screen.blit(self.track_surface, (0, 0))
 
-            # Update the display
-            pygame.display.flip()
+        if self.show_mean:
+            self._update_mean_trajectory()
+            if self.mean_trajectory_surface:
+                screen.blit(self.mean_trajectory_surface, (0, 0))
 
-            pygame.display.flip()
-            self.clock.tick(60)
+        self._draw_cars(screen)
+        self._draw_ui(screen)
 
-        pygame.quit()
+    def reset(self):
+        self._next_state = None
+        self.generate_new_population()

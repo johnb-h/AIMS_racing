@@ -1,7 +1,8 @@
 import pygame
 
-from scene import Scene
-from states import State
+from user_interface.scene import Scene
+from user_interface.states import State
+
 
 # Instructions Scene
 class InstructionsScene(Scene):
@@ -22,7 +23,7 @@ class InstructionsScene(Scene):
         instructions = [
             "Use arrow keys to move.",
             "Press space to shoot.",
-            "Click to continue."
+            "Click to continue.",
         ]
         for i, line in enumerate(instructions):
             text_surface = self.font.render(line, True, (0, 0, 0))

@@ -1,11 +1,15 @@
+from typing import Dict, Type
+
 import pygame
 
-from constants import RESOLUTION
-from states import State
-from main_menu_scene import MainMenuScene
-from instructions_scene import InstructionsScene
-from game_scene import GameScene
-from name_entry_scene import NameEntryScene
+from user_interface.game_scene import GameScene
+from user_interface.game_scene_new import GameSceneNew
+from user_interface.instructions_scene import InstructionsScene
+from user_interface.main_menu_scene import MainMenuScene
+from user_interface.name_entry_scene import NameEntryScene
+from user_interface.scene import Scene
+from user_interface.states import State
+
 
 class ApplicationManager:
     def __init__(self, window_width=1200, window_height=800):
@@ -17,8 +21,8 @@ class ApplicationManager:
         self._scenes = {
             State.MAIN_MENU: MainMenuScene(),
             State.INSTRUCTIONS: InstructionsScene(),
-            State.GAME: GameScene(),
-            State.NAME_ENTRY: NameEntryScene()
+            State.GAME: GameSceneNew(),
+            State.NAME_ENTRY: NameEntryScene(),
         }
         self._scene = self._scenes[self._state]
 
@@ -28,13 +32,11 @@ class ApplicationManager:
         self._set_screen(window_width, window_height)
 
     def _set_screen(self, window_width, window_height):
-        self._screen = pygame.display.set_mode((
-            window_width,
-            window_height
-            ), pygame.RESIZABLE)
+        self._screen = pygame.display.set_mode(
+            (window_width, window_height), pygame.RESIZABLE
+        )
         self._screen_rect = self._screen.get_rect()
         pygame.display.update()
-
 
     def run_game_loop(self):
         clock = pygame.time.Clock()
@@ -65,4 +67,3 @@ class ApplicationManager:
         self._state = state
         self._scene = self._scenes[state]
         self._scene.reset()
-

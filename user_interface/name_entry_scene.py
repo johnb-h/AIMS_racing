@@ -1,7 +1,8 @@
 import pygame
 
-from scene import Scene
-from states import State
+from user_interface.scene import Scene
+from user_interface.states import State
+
 
 # Name Entry Scene
 class NameEntryScene(Scene):

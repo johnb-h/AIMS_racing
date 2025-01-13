@@ -1,8 +1,6 @@
-# import pygame
-import sys
 import argparse
 
-from application_manager import ApplicationManager
+from user_interface.application_manager import ApplicationManager
 
 
 # Main Function

@@ -1,17 +1,19 @@
-import pygame
-import matplotlib
-from typing import Optional, List, Tuple
+from typing import List, Optional, Tuple
 
-from scene import Scene
-from states import State
-from race_track import RaceTrack
-from car import Car
-from constants import (
-    WINDOW_WIDTH_IN_M,
-    WINDOW_HEIGHT_IN_M,
+import matplotlib
+import pygame
+
+from user_interface.car import Car
+from user_interface.constants import (
     CONST_STEER,
-    N_CARS
+    N_CARS,
+    WINDOW_HEIGHT_IN_M,
+    WINDOW_WIDTH_IN_M,
 )
+from user_interface.race_track import RaceTrack
+from user_interface.scene import Scene
+from user_interface.states import State
+
 
 # Game Scene
 class GameScene(Scene):
@@ -25,9 +27,11 @@ class GameScene(Scene):
 
         if car_colours is None:
             car_colours = matplotlib.cm.get_cmap("tab10")(range(N_CARS))
-            car_colours = [(int(r * 255), int(g * 255), int(b * 255)) for r, g, b, _ in car_colours]
-        
-        self._init_cars(car_colours=car_colours) 
+            car_colours = [
+                (int(r * 255), int(g * 255), int(b * 255)) for r, g, b, _ in car_colours
+            ]
+
+        self._init_cars(car_colours=car_colours)
 
     def handle_events(self, events):
         for ev in events:

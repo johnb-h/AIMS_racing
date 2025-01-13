@@ -1,10 +1,8 @@
-import pygame
 from typing import Callable
 
-from constants import (
-    WINDOW_WIDTH_IN_M,
-    RESOLUTION
-)
+import pygame
+
+from user_interface.constants import RESOLUTION, WINDOW_WIDTH_IN_M
 
 SteeringFunction = Callable[[float], float]
 
@@ -21,6 +19,7 @@ class WorldRect(pygame.Rect):
         width = meters_to_pixels(width)
         height = meters_to_pixels(height)
         super().__init__(left, top, width, height)
+
 
 class WorldVector2(pygame.Vector2):
     def __init__(self, x, y):
