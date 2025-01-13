@@ -22,6 +22,7 @@ class CarEvolution:
         track_inner_width: float,
         track_inner_height: float,
         population_size: int = 100,
+        num_visualize: int = 10,
         n_steps: int = 1000,
         track_outer: List[Tuple[float, float]] = None,
         track_inner: List[Tuple[float, float]] = None,
@@ -47,6 +48,7 @@ class CarEvolution:
         self._setup_basis_functions()
 
         # Evolution strategy setup
+        self.num_visualize = num_visualize
         self.strategy = self._setup_evolution_strategy(population_size)
 
     def _setup_basis_functions(self):
@@ -158,11 +160,12 @@ class CarEvolution:
         sorted_indices = np.argsort(scores)
 
         # Get indices for display
-        best_indices = sorted_indices[-3:]
-        worst_indices = sorted_indices[:3]
+        num_best = num_worst = self.num_visualize // 3
+        best_indices = sorted_indices[-num_best:]
+        worst_indices = sorted_indices[:num_worst]
         self.rng, rng_sample = jax.random.split(self.rng)
         random_indices = jax.random.choice(
-            rng_sample, sorted_indices[3:-3], shape=(4,), replace=False
+            rng_sample, sorted_indices[num_worst:-num_best], shape=(4,), replace=False
         )
 
         # Store display information

@@ -1,12 +1,13 @@
 from dataclasses import dataclass
 import math
-from typing import List, Tuple
+from typing import List, Tuple, Optional
+import matplotlib
 
 import numpy as np
 import pygame
 
 from evolution.evolution import CarEvolution
-from user_interface.constants import WINDOW_HEIGHT_IN_M, WINDOW_WIDTH_IN_M
+from user_interface.constants import TARGET_FPS, WINDOW_HEIGHT_IN_M, WINDOW_WIDTH_IN_M
 from user_interface.scene import Scene
 from user_interface.states import State
 from user_interface.constants import CAR_LENGTH, CAR_WIDTH
@@ -25,8 +26,24 @@ class Car:
 
 
 class GameSceneNew(Scene):
-    def __init__(self):
+    def __init__(
+        self,
+        num_visualised_cars: int = 10,
+        car_colours: Optional[List[Tuple[int, int, int]]] = None,
+    ):
         super().__init__()
+
+        self.num_visualised_cars = num_visualised_cars
+        self.car_colours = car_colours
+        if self.car_colours is None:
+            self.car_colours = matplotlib.cm.get_cmap("tab10")(
+                range(self.num_visualised_cars)
+            )
+            self.car_colours = [
+                (int(r * 255), int(g * 255), int(b * 255))
+                for r, g, b, _ in self.car_colours
+            ]
+
         self._init_display()
         self._init_track()
         self._init_evolution()
@@ -101,6 +118,7 @@ class GameSceneNew(Scene):
             track_inner_height=self.track_inner_height,
             track_outer=self.track_outer,
             track_inner=self.track_inner,
+            num_visualize=self.num_visualised_cars,
         )
 
     def resize(self, new_width: int, new_height: int):
@@ -170,8 +188,8 @@ class GameSceneNew(Scene):
     def generate_new_population(self):
         """Generate and initialize a new population of cars."""
         self.cars = [
-            Car(positions=traj, color=tuple(np.random.randint(100, 255, 3)))
-            for traj in self.evolution.ask()
+            Car(positions=traj, color=color)
+            for traj, color in zip(self.evolution.ask(), self.car_colours)
         ]
         self.current_step = 0
         self.cars_driving = True
@@ -270,7 +288,10 @@ class GameSceneNew(Scene):
                         )
                         angle = np.arctan2(dy, dx)
                         # Arbitrary constants right now - needs changing
-                        rect_size = (20, 10)
+                        rect_size = (
+                            CAR_LENGTH * self.track_scale,
+                            CAR_WIDTH * self.track_scale,
+                        )
 
                         # Create a surface for the car with the correct size
                         car_surface = pygame.Surface(
@@ -283,13 +304,13 @@ class GameSceneNew(Scene):
                         # Calculate the rear axle position (pivot point for rotation)
                         # NOTE: The signs seem wrong here (looks like I'm rotating around the front wheels?) but it looks way
                         # more natural IMO. Maybe change later.
-                        rear_axle_offset = WorldVector2(
-                            CAR_LENGTH / 2, 0
+                        rear_axle_offset = pygame.Vector2(
+                            self.track_scale * CAR_LENGTH / 2, 0
                         )  # Rear axle is half the car's length behind the center
                         rear_axle_offset = rear_axle_offset.rotate_rad(
                             angle
                         )  # Rotate offset by car's direction
-                        rear_axle_position = current_pos + rear_axle_offset
+                        rear_axle_position = current_pos - rear_axle_offset
 
                         # Rotate the car surface based on the direction angle
                         rotated_car = pygame.transform.rotate(
@@ -351,7 +372,7 @@ class GameSceneNew(Scene):
         else:
             elapsed_time = self.current_step
 
-        elapsed_time = elapsed_time / 60
+        elapsed_time = elapsed_time / TARGET_FPS
         timer_text = font.render(f"Time: {elapsed_time:.2f}s", True, (255, 255, 255))
         timer_rect = timer_text.get_rect(topright=(self.width - 10, 10))
         screen.blit(timer_text, timer_rect)

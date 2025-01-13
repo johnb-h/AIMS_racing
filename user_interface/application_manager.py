@@ -2,6 +2,7 @@ from typing import Dict, Type
 
 import pygame
 
+from user_interface.constants import TARGET_FPS
 from user_interface.game_scene import GameScene
 from user_interface.game_scene_new import GameSceneNew
 from user_interface.instructions_scene import InstructionsScene
@@ -49,7 +50,7 @@ class ApplicationManager:
         running = True
 
         while running:
-            dt = clock.tick(60) / 1000.0  # Delta time in seconds
+            dt = clock.tick(TARGET_FPS) / 1000.0  # Delta time in seconds
 
             events = pygame.event.get()
             for event in events:
