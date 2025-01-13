@@ -1,6 +1,15 @@
-from typing import List, Optional, Tuple
+from typing import List, NamedTuple, Tuple
 
+import jax
+import jax.numpy as jnp
 import numpy as np
+from evosax import SimpleES
+
+
+class TrajectoryInfo(NamedTuple):
+    positions: List[Tuple[float, float]]
+    crashed: bool
+    crash_step: int
 
 
 class CarEvolution:
@@ -12,209 +21,182 @@ class CarEvolution:
         track_outer_height: float,
         track_inner_width: float,
         track_inner_height: float,
-        track_outer: List[Tuple[float, float]],
-        track_inner: List[Tuple[float, float]],
-        population_size: int = 20,
-        mutation_rate: float = 0.1,
-        mutation_strength: float = 0.1,
-        n_points: int = 100,
+        population_size: int = 100,
+        n_steps: int = 1000,
+        track_outer: List[Tuple[float, float]] = None,
+        track_inner: List[Tuple[float, float]] = None,
         slow_down: bool = False,
     ):
-        self.track_center = track_center
-        self.start_position = start_position
+        self.rng = jax.random.PRNGKey(0)
+        self.n_steps = n_steps
+        self.slow_down = slow_down
+
+        # Track setup
+        self.start_position = np.array(start_position)
+        self.track_center = np.array(track_center)
         self.track_outer_width = track_outer_width
         self.track_outer_height = track_outer_height
         self.track_inner_width = track_inner_width
         self.track_inner_height = track_inner_height
-        self.track_outer = track_outer
-        self.track_inner = track_inner
-        self.population_size = population_size
-        self.mutation_rate = mutation_rate
-        self.mutation_strength = mutation_strength
-        self.n_points = n_points
-        self.slow_down = slow_down
+        self.track_outer = np.array(track_outer) if track_outer else None
+        self.track_inner = np.array(track_inner) if track_inner else None
 
-        # Evolution state
-        self.generation = 0
-        self.population = None
-        self.mean_trajectory = None
-        self.displayed_crashed = None
-        self.displayed_crash_steps = None
+        # Basis function setup
+        self.basis_functions = [(0.02, 40), (0.01, 100)]  # (width, count) pairs
+        self.n_params = sum(count for _, count in self.basis_functions)
+        self._setup_basis_functions()
 
-        # Initialize population
-        self._initialize_population()
+        # Evolution strategy setup
+        self.strategy = self._setup_evolution_strategy(population_size)
 
-    def _initialize_population(self):
-        """Initialize the population with random trajectories."""
-        self.population = []
-        for _ in range(self.population_size):
-            trajectory = self._generate_random_trajectory()
-            self.population.append(trajectory)
+    def _setup_basis_functions(self):
+        """Set up basis functions for trajectory generation."""
+        # Precompute centers and widths
+        centers, widths = [], []
+        for width, count in self.basis_functions:
+            centers.extend(np.linspace(0, 1, count))
+            widths.extend([width] * count)
+        self.centers = np.array(centers)
+        self.widths = np.array(widths)
 
-    def _generate_random_trajectory(self) -> List[Tuple[float, float]]:
-        """Generate a random trajectory starting from the start position."""
-        trajectory = [self.start_position]
-        current_pos = self.start_position
+        # Precompute basis matrix
+        t = np.linspace(0, 1, self.n_steps)
+        self.basis_matrix = np.array(
+            [
+                np.exp(-((t - center) ** 2) / (2 * width**2))
+                for center, width in zip(self.centers, self.widths)
+            ]
+        ).T
 
-        # Parameters for trajectory generation
-        max_step = 10.0  # Maximum step size
-        angle_range = np.pi / 2  # Maximum turning angle
+    def _setup_evolution_strategy(self, population_size: int):
+        """Initialize the evolution strategy."""
+        strategy = SimpleES(
+            popsize=population_size,
+            num_dims=self.n_params,
+            maximize=True,
+            sigma_init=0.2,
+            mean_decay=0.01,
+        )
+        del strategy.elite_ratio
 
-        # Previous direction (start moving right)
-        prev_direction = np.array([1.0, 0.0])
+        self.es_params = strategy.default_params.replace(c_m=0.5, c_sigma=0.3)
+        self.rng, rng_init = jax.random.split(self.rng)
+        self.state = strategy.initialize(rng_init, self.es_params)
 
-        for _ in range(self.n_points - 1):
-            # Generate random angle change
-            angle = np.random.uniform(-angle_range, angle_range)
+        return strategy
 
-            # Rotate previous direction
-            direction = np.array(
-                [
-                    prev_direction[0] * np.cos(angle)
-                    - prev_direction[1] * np.sin(angle),
-                    prev_direction[0] * np.sin(angle)
-                    + prev_direction[1] * np.cos(angle),
-                ]
-            )
-            direction = direction / np.linalg.norm(direction)
+    def _compute_steering_angles(self, params: np.ndarray) -> np.ndarray:
+        """Compute steering angles using basis functions."""
+        angles = np.dot(self.basis_matrix, params)
+        return 2.0 / (1.0 + np.exp(-0.2 * angles)) - 1.0  # Sigmoid
 
-            # Generate step size
-            step_size = np.random.uniform(0, max_step)
+    def _is_inside_track(self, position: np.ndarray) -> bool:
+        """Check if a position is inside the track boundaries."""
+        delta = position - self.track_center
+        ow, oh = self.track_outer_width / 2, self.track_outer_height / 2
+        outer_ellipse = (delta[0] / ow) ** 2 + (delta[1] / oh) ** 2
+        iw, ih = self.track_inner_width / 2, self.track_inner_height / 2
+        inner_ellipse = (delta[0] / iw) ** 2 + (delta[1] / ih) ** 2
+        return outer_ellipse <= 1.0 and inner_ellipse >= 1.0
+
+    def _generate_trajectory(
+        self, params: np.ndarray, check_crashes: bool = True
+    ) -> TrajectoryInfo:
+        """Generate a car trajectory from parameters."""
+        # Initial state
+        pos = np.array(self.start_position, dtype=float)
+        angle = 0.0
+        angular_velocity = 0.0
+        base_speed = 4.0
+
+        # Get steering angles
+        target_velocities = self._compute_steering_angles(params)
+        # Generate trajectory
+        positions = []
+        for i in range(self.n_steps):
+            positions.append((float(pos[0]), float(pos[1])))
+
+            if check_crashes and not self._is_inside_track(pos):
+                return TrajectoryInfo(
+                    positions + [positions[-1]] * (self.n_steps - i - 1), True, i
+                )
+
+            # Update steering
+            target_velocity = target_velocities[i]
+            angular_velocity = target_velocity * (np.pi / 12)  # Max 15-degree turn
+            angle += angular_velocity
+
+            # Calculate speed
+            speed = base_speed
             if self.slow_down:
-                step_size *= 0.5
+                turn_ratio = min(1, abs(angular_velocity) * 10)
+                speed *= 1.0 - 0.7 * turn_ratio
 
-            # Calculate new position
-            new_pos = (
-                current_pos[0] + direction[0] * step_size,
-                current_pos[1] + direction[1] * step_size,
-            )
+            # Update position
+            pos += speed * np.array([np.cos(angle), np.sin(angle)])
 
-            trajectory.append(new_pos)
-            current_pos = new_pos
-            prev_direction = direction
-
-        return trajectory
-
-    def _mutate_trajectory(
-        self, trajectory: List[Tuple[float, float]]
-    ) -> List[Tuple[float, float]]:
-        """Apply mutation to a trajectory."""
-        mutated = [self.start_position]  # Keep start position fixed
-
-        for i in range(1, len(trajectory)):
-            if np.random.random() < self.mutation_rate:
-                # Add random offset to point
-                offset = np.random.normal(0, self.mutation_strength, 2)
-                new_point = (
-                    trajectory[i][0] + offset[0] * self.track_outer_width,
-                    trajectory[i][1] + offset[1] * self.track_outer_height,
-                )
-                mutated.append(new_point)
-            else:
-                mutated.append(trajectory[i])
-
-        return mutated
-
-    def _crossover(
-        self, parent1: List[Tuple[float, float]], parent2: List[Tuple[float, float]]
-    ) -> List[Tuple[float, float]]:
-        """Perform crossover between two parent trajectories."""
-        # Single point crossover
-        crossover_point = np.random.randint(1, len(parent1))
-        child = parent1[:crossover_point] + parent2[crossover_point:]
-        return child
-
-    def _check_collision(
-        self, trajectory: List[Tuple[float, float]]
-    ) -> Tuple[bool, Optional[int]]:
-        """Check if trajectory collides with track boundaries."""
-
-        def point_in_oval(point, center, width, height):
-            x = (point[0] - center[0]) / (width / 2)
-            y = (point[1] - center[1]) / (height / 2)
-            return x * x + y * y
-
-        for i, point in enumerate(trajectory):
-            # Check outer boundary
-            if (
-                point_in_oval(
-                    point,
-                    self.track_center,
-                    self.track_outer_width,
-                    self.track_outer_height,
-                )
-                > 1
-            ):
-                return True, i
-
-            # Check inner boundary
-            if (
-                point_in_oval(
-                    point,
-                    self.track_center,
-                    self.track_inner_width,
-                    self.track_inner_height,
-                )
-                < 1
-            ):
-                return True, i
-
-        return False, None
+        return TrajectoryInfo(positions, False, self.n_steps)
 
     def ask(self) -> List[List[Tuple[float, float]]]:
-        """Get current population trajectories for evaluation."""
-        self.displayed_crashed = []
-        self.displayed_crash_steps = []
+        """Get a batch of trajectories to evaluate."""
+        # Generate parameters
+        self.rng, rng_ask = jax.random.split(self.rng)
+        self.current_x, self.state = self.strategy.ask(
+            rng_ask, self.state, self.es_params
+        )
 
-        for trajectory in self.population:
-            crashed, crash_step = self._check_collision(trajectory)
-            self.displayed_crashed.append(crashed)
-            self.displayed_crash_steps.append(
-                crash_step if crash_step is not None else len(trajectory)
-            )
+        # Generate trajectories
+        trajectories = [self._generate_trajectory(p) for p in self.current_x]
 
-        return self.population
+        # Store information
+        self.trajectories = [t.positions for t in trajectories]
+        self.crashed = [t.crashed for t in trajectories]
+        self.crash_steps = [t.crash_step for t in trajectories]
+
+        # Select display trajectories
+        scores = [t.crash_step if t.crashed else self.n_steps + 1 for t in trajectories]
+        sorted_indices = np.argsort(scores)
+
+        # Get indices for display
+        best_indices = sorted_indices[-3:]
+        worst_indices = sorted_indices[:3]
+        self.rng, rng_sample = jax.random.split(self.rng)
+        random_indices = jax.random.choice(
+            rng_sample, sorted_indices[3:-3], shape=(4,), replace=False
+        )
+
+        # Store display information
+        self.displayed_indices = np.concatenate(
+            [best_indices, worst_indices, random_indices]
+        )
+        self.displayed_crashed = [self.crashed[i] for i in self.displayed_indices]
+        self.displayed_crash_steps = [
+            self.crash_steps[i] for i in self.displayed_indices
+        ]
+
+        return [self.trajectories[i] for i in self.displayed_indices]
 
     def tell(self, selected_indices: List[int]):
-        """Update population based on selection."""
-        # Create new population from selected individuals
-        selected = [self.population[i] for i in selected_indices]
+        """Update evolution strategy based on selection."""
+        # Map display indices to full population indices
+        full_indices = jnp.array([self.displayed_indices[i] for i in selected_indices])
 
-        new_population = []
+        # Create fitness array
+        fitness = jnp.zeros(self.strategy.popsize).at[full_indices].set(1.0)
 
-        # Keep selected individuals
-        new_population.extend(selected)
+        # Update weights and strategy
+        weights = (
+            jnp.zeros(self.strategy.popsize)
+            .at[: len(full_indices)]
+            .set(1.0 / len(full_indices))
+        )
+        self.state = self.state.replace(weights=weights)
+        self.state = self.strategy.tell(
+            self.current_x, fitness, self.state, self.es_params
+        )
 
-        # Fill rest with mutations and crossovers
-        while len(new_population) < self.population_size:
-            if len(selected) >= 2 and np.random.random() < 0.5:
-                # Crossover
-                parent1, parent2 = np.random.choice(selected, 2, replace=False)
-                child = self._crossover(parent1, parent2)
-                child = self._mutate_trajectory(child)  # Apply mutation after crossover
-                new_population.append(child)
-            else:
-                # Mutation
-                parent = np.random.choice(selected)
-                child = self._mutate_trajectory(parent)
-                new_population.append(child)
-
-        self.population = new_population
-        self.generation += 1
-
-        # Update mean trajectory
-        self._update_mean_trajectory(selected)
-
-    def _update_mean_trajectory(self, selected: List[List[Tuple[float, float]]]):
-        """Update the mean trajectory from selected individuals."""
-        if not selected:
-            self.mean_trajectory = None
-            return
-
-        # Convert to numpy array for easier computation
-        trajectories = np.array(selected)
-        self.mean_trajectory = list(map(tuple, np.mean(trajectories, axis=0)))
-
-    def get_mean_trajectory(self) -> Optional[List[Tuple[float, float]]]:
-        """Get the mean trajectory of selected individuals."""
-        return self.mean_trajectory
+    def get_mean_trajectory(self) -> List[Tuple[float, float]]:
+        """Get trajectory for mean parameters."""
+        if not hasattr(self, "state"):
+            return None
+        return self._generate_trajectory(self.state.mean, check_crashes=False).positions
