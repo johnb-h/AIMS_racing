@@ -1,15 +1,19 @@
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
 from typing import List, Tuple
 
 import numpy as np
 import pygame
 
 from evolution.evolution import CarEvolution
-from user_interface.constants import WINDOW_HEIGHT_IN_M, WINDOW_WIDTH_IN_M
+from user_interface.constants import (
+    CAR_LENGTH,
+    CAR_WIDTH,
+    WINDOW_HEIGHT_IN_M,
+    WINDOW_WIDTH_IN_M,
+)
 from user_interface.scene import Scene
 from user_interface.states import State
-from user_interface.constants import CAR_LENGTH, CAR_WIDTH
 from user_interface.utils import WorldVector2
 
 BACKGROUND_COLOR = (0, 102, 16)
@@ -369,9 +373,13 @@ class GameSceneNew(Scene):
         mean_text = font.render("(m) show population mean", True, (255, 255, 255))
         screen.blit(mean_text, (10, self.height - 80))
 
+        # Draw restart instruction
+        restart_text = font.render("(r) restart", True, (255, 255, 255))
+        screen.blit(restart_text, (10, self.height - 120))
+
         # Draw exit instruction
         exit_text = font.render("(esc) exit", True, (255, 255, 255))
-        screen.blit(exit_text, (10, self.height - 120))
+        screen.blit(exit_text, (10, self.height - 160))
 
     def handle_events(self, events):
         for event in events:
@@ -403,6 +411,15 @@ class GameSceneNew(Scene):
                         self.cars[car_index].selected = not self.cars[
                             car_index
                         ].selected
+                elif event.key == pygame.K_r:
+                    self.restart()
+
+    def restart(self):
+        self._init_state()
+        self._init_evolution()
+        self._init_visualization_cache()
+        self.generation = 1
+        self.generate_new_population()
 
     def _handle_space_key(self):
         if self.cars_driving:
@@ -450,7 +467,7 @@ class GameSceneNew(Scene):
         self.cars: List[Car] = []
         self.current_step = 0
         self.cars_driving = True
-        self.generation = 0
+        self.generation = 1
         self.show_mean = False
         self.finish_line_crossed = False
         self.finish_time = None

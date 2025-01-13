@@ -27,7 +27,8 @@ class CarEvolution:
         track_inner: List[Tuple[float, float]] = None,
         slow_down: bool = False,
     ):
-        self.rng = jax.random.PRNGKey(0)
+        seed = np.random.randint(0, 1000000)
+        self.rng = jax.random.PRNGKey(seed)
         self.n_steps = n_steps
         self.slow_down = slow_down
 
