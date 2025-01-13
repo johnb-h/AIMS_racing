@@ -8,6 +8,9 @@ from evolution.evolution import CarEvolution
 from user_interface.scene import Scene
 from user_interface.states import State
 
+BACKGROUND_COLOR = (0, 102, 16)
+TRACK_COLOR = (50, 50, 50)
+
 
 @dataclass
 class Car:
@@ -93,6 +96,12 @@ class GameSceneNew(Scene):
     def _create_track_surface(self) -> pygame.Surface:
         """Create the static track surface with boundaries and finish line."""
         surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+
+        # Draw the filled track area
+        pygame.draw.polygon(surface, TRACK_COLOR, self.track_outer)
+        pygame.draw.polygon(
+            surface, (0, 0, 0, 0), self.track_inner
+        )  # Cut out the inner area
 
         # Draw track boundaries
         pygame.draw.lines(surface, (255, 0, 0), True, self.track_outer, 2)
@@ -340,7 +349,9 @@ class GameSceneNew(Scene):
                     # TODO link this with button presses
                     car_index = event.key - pygame.K_0
                     if car_index < len(self.cars):
-                        self.cars[car_index].selected = not self.cars[car_index].selected
+                        self.cars[car_index].selected = not self.cars[
+                            car_index
+                        ].selected
 
     def _handle_space_key(self):
         if self.cars_driving:
@@ -367,7 +378,7 @@ class GameSceneNew(Scene):
         return self._next_state
 
     def draw(self, screen):
-        screen.fill((0, 0, 0))
+        screen.fill(BACKGROUND_COLOR)
         screen.blit(self.track_surface, (0, 0))
 
         if self.show_mean:
