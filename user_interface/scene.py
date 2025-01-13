@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
-
-from states import State
 from typing import Optional
+
+from user_interface.states import State
+
 
 # Base Scene Class
 class Scene(ABC):

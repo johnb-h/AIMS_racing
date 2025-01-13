@@ -1,9 +1,12 @@
-import pygame
 from typing import Optional
 from itertools import cycle
 
-from scene import Scene
-from states import State
+import pygame
+
+from user_interface.constants import WINDOW_HEIGHT_IN_M, WINDOW_WIDTH_IN_M
+from user_interface.scene import Scene
+from user_interface.states import State
+
 
 # Main Menu Scene
 class MainMenuScene(Scene):
