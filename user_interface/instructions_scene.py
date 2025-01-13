@@ -1,8 +1,8 @@
 import pygame
 from itertools import cycle
 
-from scene import Scene
-from states import State
+from user_interface.scene import Scene
+from user_interface.states import State
 
 # Instructions Scene
 class InstructionsScene(Scene):
