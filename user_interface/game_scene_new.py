@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import math
 from typing import List, Tuple
 
 import numpy as np
@@ -7,6 +8,8 @@ import pygame
 from evolution.evolution import CarEvolution
 from user_interface.scene import Scene
 from user_interface.states import State
+from user_interface.constants import CAR_LENGTH, CAR_WIDTH
+from user_interface.utils import WorldVector2
 
 BACKGROUND_COLOR = (0, 102, 16)
 TRACK_COLOR = (50, 50, 50)
@@ -234,7 +237,6 @@ class GameSceneNew(Scene):
                     0 <= current_pos[0] <= self.width
                     and 0 <= current_pos[1] <= self.height
                 ):
-                    # Draw direction arrow
                     if len(positions) > 1:
                         prev_pos = positions[-2]
                         dx, dy = (
@@ -242,21 +244,45 @@ class GameSceneNew(Scene):
                             current_pos[1] - prev_pos[1],
                         )
                         angle = np.arctan2(dy, dx)
+                        # Arbitrary constants right now - needs changing
+                        rect_size = (20, 10)
 
-                        # Arrow points
-                        length = 15
-                        tip = current_pos
-                        left = (
-                            tip[0] - length * np.cos(angle + 2.5),
-                            tip[1] - length * np.sin(angle + 2.5),
+                        # Create a surface for the car with the correct size
+                        car_surface = pygame.Surface(
+                            rect_size, pygame.SRCALPHA
+                        )  # Surface with alpha transparency
+                        car_surface.fill(
+                            car.color
+                        )  # Fill the surface with a red colour
+
+                        # Calculate the rear axle position (pivot point for rotation)
+                        # NOTE: The signs seem wrong here (looks like I'm rotating around the front wheels?) but it looks way
+                        # more natural IMO. Maybe change later.
+                        rear_axle_offset = WorldVector2(
+                            CAR_LENGTH / 2, 0
+                        )  # Rear axle is half the car's length behind the center
+                        rear_axle_offset = rear_axle_offset.rotate_rad(
+                            angle
+                        )  # Rotate offset by car's direction
+                        rear_axle_position = current_pos + rear_axle_offset
+
+                        # Rotate the car surface based on the direction angle
+                        rotated_car = pygame.transform.rotate(
+                            car_surface,
+                            -math.degrees(
+                                angle
+                            ),  # Rotate by the car's direction angle (convert radians to degrees)
                         )
-                        right = (
-                            tip[0] - length * np.cos(angle - 2.5),
-                            tip[1] - length * np.sin(angle - 2.5),
+
+                        # Get the rectangle of the rotated car for correct positioning
+                        rotated_car_rect = rotated_car.get_rect()
+                        rotated_car_rect.center = (
+                            int(rear_axle_position.x),
+                            int(rear_axle_position.y),
                         )
-                        pygame.draw.polygon(
-                            trajectory_surface, car.color, [tip, left, right]
-                        )
+
+                        # Draw the rotated car onto the screen
+                        screen.blit(rotated_car, rotated_car_rect.topleft)
 
                     # Draw crash marker
                     if crashed and max_step >= crash_step:
