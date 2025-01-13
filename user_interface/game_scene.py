@@ -30,7 +30,7 @@ class Car:
     last_position: Tuple[float, float] = (0, 0)
 
 
-class GameSceneNew(Scene):
+class GameScene(Scene):
     def __init__(
         self,
         num_visualised_cars: int = 10,

@@ -4,7 +4,6 @@ import pygame
 
 from user_interface.constants import TARGET_FPS
 from user_interface.game_scene import GameScene
-from user_interface.game_scene_new import GameSceneNew
 from user_interface.instructions_scene import InstructionsScene
 from user_interface.main_menu_scene import MainMenuScene
 from user_interface.name_entry_scene import NameEntryScene
@@ -26,7 +25,7 @@ class ApplicationManager:
         self._scenes = {
             State.MAIN_MENU: MainMenuScene(),
             State.INSTRUCTIONS: InstructionsScene(),
-            State.GAME: GameSceneNew(),
+            State.GAME: GameScene(),
             State.NAME_ENTRY: NameEntryScene(),
         }
         self._scene = self._scenes[self._state]
