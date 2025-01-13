@@ -31,6 +31,8 @@ class Car:
 
         self._t = 0.0
 
+        self.past_positions = []
+
     def increment_time(self, dt):
         self._t += dt
         self.update_parameters()
@@ -48,6 +50,7 @@ class Car:
         self.steering_angle = self.steering_func(self._t)
 
     def update(self, dt):
+        self.past_positions.append((self.pixel_position.x, self.pixel_position.y))
         # Update position based on speed and steering angle
         self.increment_time(dt)
 
@@ -72,7 +75,7 @@ class Car:
         car_surface = pygame.Surface(
             rect_size, pygame.SRCALPHA
         )  # Surface with alpha transparency
-        car_surface.fill(self.colour)  # Fill the surface with a red color
+        car_surface.fill(self.colour)  # Fill the surface with a red colour
 
         # Calculate the rear axle position (pivot point for rotation)
         # NOTE: The signs seem wrong here (looks like I'm rotating around the front wheels?) but it looks way
@@ -100,3 +103,12 @@ class Car:
         # Draw the rotated car onto the screen
         screen.blit(rotated_car, rotated_car_rect.topleft)
 
+        # Draw the dashed trajectory
+        if len(self.past_positions) > 1:
+            pygame.draw.lines(
+                screen,
+                self.colour,
+                False,
+                [(int(x), int(y)) for x, y in self.past_positions],
+                width=1
+            )

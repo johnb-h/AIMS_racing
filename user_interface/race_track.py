@@ -8,6 +8,12 @@ from utils import (
     WorldRect
 )
 
+def point_in_ellipse(point, center, radius_x, radius_y):
+    """Check if the point is inside an ellipse defined by the given center and radii."""
+    x, y = point
+    cx, cy = center
+    return ((x - cx) ** 2) / (radius_x ** 2) + ((y - cy) ** 2) / (radius_y ** 2) <= 1
+
 class RaceTrack:
     def __init__(
         self,
@@ -66,7 +72,12 @@ class RaceTrack:
     def is_on_track(self, position: pygame.Vector2) -> bool:
         """Check if the given position is on the track."""
         # Check if the position is within the inner radius and outside the outer radius
-        return self.inner_radius.collidepoint(position) and not self.outer_radius.collidepoint
+        is_in_inner_radius = point_in_ellipse(
+            position, self.inner_radius.center, self.inner_radius.width / 2, self.inner_radius.height / 2)
+        is_in_outer_radius = point_in_ellipse(
+            position, self.inner_radius.center, self.outer_radius.width / 2, self.outer_radius.height / 2)
+        is_on_track = is_in_outer_radius and not is_in_inner_radius
+        return is_on_track
 
     def draw(self, screen):
         # Fill the background with green
