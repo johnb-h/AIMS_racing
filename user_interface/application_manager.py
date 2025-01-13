@@ -15,8 +15,12 @@ class ApplicationManager:
     def __init__(self, window_width=1200, window_height=800):
         self._window_width = window_width
         self._window_height = window_height
-        self._init_game(window_width, window_height)
 
+        # Initialize pygame first
+        pygame.init()
+        pygame.display.set_caption("Evolving Cars")
+
+        # Create scenes before setting up the screen
         self._state = State.MAIN_MENU
         self._scenes = {
             State.MAIN_MENU: MainMenuScene(),
@@ -26,9 +30,7 @@ class ApplicationManager:
         }
         self._scene = self._scenes[self._state]
 
-    def _init_game(self, window_width, window_height):
-        pygame.init()
-        pygame.display.set_caption("Evolving Cars")
+        # Now set up the screen, which will resize all scenes
         self._set_screen(window_width, window_height)
 
     def _set_screen(self, window_width, window_height):
@@ -36,6 +38,10 @@ class ApplicationManager:
             (window_width, window_height), pygame.RESIZABLE
         )
         self._screen_rect = self._screen.get_rect()
+        # Resize the current scene if it supports resizing
+        for scene in self._scenes.values():
+            if hasattr(scene, "resize"):
+                scene.resize(window_width, window_height)
         pygame.display.update()
 
     def run_game_loop(self):

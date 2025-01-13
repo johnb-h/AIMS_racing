@@ -5,6 +5,7 @@ import numpy as np
 import pygame
 
 from evolution.evolution import CarEvolution
+from user_interface.constants import WINDOW_HEIGHT_IN_M, WINDOW_WIDTH_IN_M
 from user_interface.scene import Scene
 from user_interface.states import State
 
@@ -20,17 +21,38 @@ class Car:
 class GameSceneNew(Scene):
     def __init__(self):
         super().__init__()
+        self._init_display()
+        self._init_track()
+        self._init_evolution()
+        self._init_state()
+        self._init_visualization_cache()
+        self.generate_new_population()
+
+    def _init_display(self):
+        """Initialize display settings based on current window."""
         info = pygame.display.Info()
         self.width = info.current_w
         self.height = info.current_h
-        self._next_state = None
+        # Calculate aspect ratio preserving track dimensions
+        self.track_scale = min(
+            self.width / (WINDOW_WIDTH_IN_M * 1.2),  # Add margins
+            self.height / (WINDOW_HEIGHT_IN_M * 1.2),
+        )
 
-        # Track setup
+    def _init_track(self):
+        """Initialize track with dimensions relative to window size."""
+        # Track setup with relative dimensions
         self.track_center = (self.width // 2, self.height // 2)
-        track_height = self.height * 0.7  # Track height
-        track_outer_width = self.width * 0.8
-        track_inner_width = self.width * 0.4
-        track_inner_height = track_height * 0.5
+
+        # Scale track dimensions based on window size while maintaining aspect ratio
+        track_height = (
+            WINDOW_HEIGHT_IN_M * self.track_scale * 0.9
+        )  # 90% of scaled height
+        track_outer_width = (
+            WINDOW_WIDTH_IN_M * self.track_scale * 0.9
+        )  # 90% of scaled width
+        track_inner_width = track_outer_width * 0.5  # Inner track is 50% of outer width
+        track_inner_height = track_height * 0.5  # Inner track is 50% of outer height
 
         self.track_outer = self._generate_oval(
             self.track_center[0], self.track_center[1], track_outer_width, track_height
@@ -42,7 +64,7 @@ class GameSceneNew(Scene):
             track_inner_height,
         )
 
-        # Finish line setup
+        # Finish line setup - align vertically between inner and outer track
         outer_top = self.track_center[1] - track_height / 2
         inner_top = self.track_center[1] - track_inner_height / 2
         finish_line_center = (outer_top + inner_top) / 2
@@ -52,33 +74,36 @@ class GameSceneNew(Scene):
             (self.track_center[0], finish_line_center + track_gap / 2),
         ]
 
-        # Evolution setup
+        # Store track dimensions for evolution
+        self.track_outer_width = track_outer_width
+        self.track_outer_height = track_height
+        self.track_inner_width = track_inner_width
+        self.track_inner_height = track_inner_height
+
+    def _init_evolution(self):
+        """Initialize evolution with track dimensions."""
+        outer_top = self.track_center[1] - self.track_outer_height / 2
+        inner_top = self.track_center[1] - self.track_inner_height / 2
+        finish_line_center = (outer_top + inner_top) / 2
+
         self.evolution = CarEvolution(
             track_center=self.track_center,
             start_position=(self.track_center[0], finish_line_center),
-            track_outer_width=track_outer_width,
-            track_outer_height=track_height,
-            track_inner_width=track_inner_width,
-            track_inner_height=track_inner_height,
+            track_outer_width=self.track_outer_width,
+            track_outer_height=self.track_outer_height,
+            track_inner_width=self.track_inner_width,
+            track_inner_height=self.track_inner_height,
             track_outer=self.track_outer,
             track_inner=self.track_inner,
         )
 
-        # State variables
-        self.cars: List[Car] = []
-        self.current_step = 0
-        self.cars_driving = True
-        self.generation = 0
-        self.show_mean = False
-        self.finish_line_crossed = False
-        self.finish_time = None
-
-        # Visualization cache
-        self.mean_trajectory_surface = None
-        self.last_generation = -1
-        self.track_surface = self._create_track_surface()
-
-        # Start simulation
+    def resize(self, new_width: int, new_height: int):
+        """Handle window resize events."""
+        self.width = new_width
+        self.height = new_height
+        self._init_track()
+        self._init_evolution()
+        self._init_visualization_cache()
         self.generate_new_population()
 
     def _generate_oval(
@@ -376,3 +401,20 @@ class GameSceneNew(Scene):
     def reset(self):
         self._next_state = None
         self.generate_new_population()
+
+    def _init_state(self):
+        """Initialize state variables."""
+        self._next_state = None
+        self.cars: List[Car] = []
+        self.current_step = 0
+        self.cars_driving = True
+        self.generation = 0
+        self.show_mean = False
+        self.finish_line_crossed = False
+        self.finish_time = None
+
+    def _init_visualization_cache(self):
+        """Initialize visualization cache."""
+        self.mean_trajectory_surface = None
+        self.last_generation = -1
+        self.track_surface = self._create_track_surface()
