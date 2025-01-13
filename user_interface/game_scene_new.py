@@ -336,6 +336,11 @@ class GameSceneNew(Scene):
                     self._handle_space_key()
                 elif event.key == pygame.K_m:
                     self.show_mean = not self.show_mean
+                elif pygame.K_0 <= event.key <= pygame.K_9:
+                    # TODO link this with button presses
+                    car_index = event.key - pygame.K_0
+                    if car_index < len(self.cars):
+                        self.cars[car_index].selected = not self.cars[car_index].selected
 
     def _handle_space_key(self):
         if self.cars_driving:
