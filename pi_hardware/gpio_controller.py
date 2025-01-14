@@ -7,6 +7,9 @@ __version__ = '0.0.0'
 __project__ = 'AIMS_racing'
 __tested__ = 'N'
 
+import sys
+
+sys.path.append('../')
 import RPi.GPIO as GPIO
 import time
 from threading import Thread
@@ -33,9 +36,16 @@ class GPIOController:
     ...
     Methods
     ----------
-
-
+    set_led
+        Set the state of the GPIO pin controlling an LED
+    read_button
+        Read the state of the GPIO pin connected to a button
+    monitor_buttons
+        Loops over the buttons reading GPIO pins
+    stop
+        Stops the GPIO listening
     """
+
     def __init__(self, led_pins: list[int], button_pins: list[int], mqtt_client: MQTTClient):
         """
         Initialise the GPIOController.
@@ -55,17 +65,14 @@ class GPIOController:
         # Initialise Tracker Var
         self.running: bool = True
 
-        # Setup GPIO mode
         GPIO.setmode(GPIO.BCM)
 
         # Initialize LED pins as output
-        for pin in led_pins:
-            GPIO.setup(pin, GPIO.OUT)
-            GPIO.output(pin, GPIO.LOW)
+        GPIO.setup(led_pins, GPIO.OUT)
+        GPIO.output(led_pins, GPIO.LOW)
 
         # Initialize Button pins as input with pull-up resistor
-        for pin in button_pins:
-            GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        GPIO.setup(button_pins, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
     def set_led(self, led_index: int, state: bool) -> None:
         """
@@ -78,6 +85,7 @@ class GPIOController:
         :return: None
         """
         if 0 <= led_index < len(self.led_pins):
+            print(f"LED {state}: {led_index}")
             GPIO.output(self.led_pins[led_index], GPIO.HIGH if state else GPIO.LOW)
         else:
             raise ValueError("Invalid LED index")
@@ -92,7 +100,7 @@ class GPIOController:
         :rtype: bool
         """
         if 0 <= button_index < len(self.button_pins):
-            return not GPIO.input(self.button_pins[button_index])  # Button pressed = LOW
+            return GPIO.input(self.button_pins[button_index])  # Button pressed = LOW
         else:
             raise ValueError("Invalid button index")
 
@@ -100,14 +108,16 @@ class GPIOController:
         """Monitor buttons and publish their status via MQTT."""
         while self.running:
             for i, pin in enumerate(self.button_pins):
-                if not GPIO.input(pin):  # Button pressed
-                    message = CustomMessage(type="button_press", id=i, state=True)
-                    self.mqtt_client.publish_message(message)
-                    time.sleep(0.1)  # Debounce delay
+                if self.read_button(i):  # Button pressed
+                    print(f"Button Clicked: {pin}")
+                    message = RaceCar(id=pin)
+                    self.mqtt_client.publish_message(message.topic, message.serialise())
+                    time.sleep(0.5)  # Debounce delay
 
     def stop(self):
         """Stop the GPIOController and clean up GPIO settings."""
         self.running = False
+        time.sleep(0.5)
         GPIO.cleanup()
 
 
@@ -131,22 +141,24 @@ if __name__ == "__main__":
 
     # Initialize GPIOController
     gpio_controller = GPIOController(led_pins, button_pins, client)
+    while True:
+        try:
+            # Start monitoring buttons in a separate thread
+            button_thread = Thread(target=gpio_controller.monitor_buttons)
+            button_thread.start()
 
-    try:
-        # Start monitoring buttons in a separate thread
-        button_thread = Thread(target=gpio_controller.monitor_buttons)
-        button_thread.start()
+            # Example: Control LEDs via code
+            gpio_controller.set_led(0, True)  # Turn on LED 0
+            time.sleep(1)
+            gpio_controller.set_led(0, False)  # Turn off LED 0
+            time.sleep(1)
+            client.publish_message("TEST/RACE", "CYCLE")
 
-        # Example: Control LEDs via code
-        gpio_controller.set_led(0, True)  # Turn on LED 0
-        time.sleep(1)
-        gpio_controller.set_led(0, False)  # Turn off LED 0
+        except KeyboardInterrupt:
+            print("Stopping GPIO Controller")
+            break
 
-    except KeyboardInterrupt:
-        print("Stopping GPIO Controller")
-
-    finally:
-        gpio_controller.stop()
-        client.stop_loop()
-        client.disconnect()
-        time.sleep(1)
+    gpio_controller.stop()
+    client.stop_loop()
+    client.disconnect()
+    time.sleep(1)
