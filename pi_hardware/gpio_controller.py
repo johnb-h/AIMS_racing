@@ -74,33 +74,31 @@ class GPIOController:
         # Initialize Button pins as input with pull-up resistor
         GPIO.setup(button_pins, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
-    def set_led(self, led_index: int, state: bool) -> None:
+    def set_led(self, led_pin: int, state: bool) -> None:
         """
         Set the state of an LED.
-
-        :param led_index: Index of the LED in led_pins list.
-        :type led_index: int
+        :param led_pin: GPIO pin of the LED
+        :type led_pin: int
         :param state: True to turn on, False to turn off.
         :type state: bool
         :return: None
         """
-        if 0 <= led_index < len(self.led_pins):
-            print(f"LED {state}: {led_index}")
-            GPIO.output(self.led_pins[led_index], GPIO.HIGH if state else GPIO.LOW)
+        if led_pin in self.led_pins:
+            print(f"LED {state}: {led_pin}")
+            GPIO.output(led_pin, GPIO.HIGH if state else GPIO.LOW)
         else:
             raise ValueError("Invalid LED index")
 
-    def read_button(self, button_index: int) -> bool:
+    def read_button(self, button_pin: int) -> bool:
         """
         Read the state of a button.
-
-        :param button_index: Index of the button in button_pins list.
-        :type button_index: int
+        :param button_pin: GPIO pin for the button
+        :type button_pin: int
         :return: True if button is pressed, False otherwise.
         :rtype: bool
         """
-        if 0 <= button_index < len(self.button_pins):
-            return GPIO.input(self.button_pins[button_index])  # Button pressed = LOW
+        if button_pin in self.button_pins:
+            return GPIO.input(button_pin)  # Button pressed = LOW
         else:
             raise ValueError("Invalid button index")
 
@@ -119,6 +117,57 @@ class GPIOController:
         self.running = False
         time.sleep(0.5)
         GPIO.cleanup()
+
+
+class LightButton:
+    """
+    Used for interfacing the light-up buttons via GPIO
+
+    ...
+    Attributes
+    ----------
+    led_pin: int
+    trigger_pin: int
+
+    ...
+    Methods
+    -------
+    toggle_light
+        Toggle light on or off and returns set state
+    check_trigger
+        Read GPIO port to check for trigger. Returns True if triggered, False otherwise.
+    """
+
+    def __init__(self, led_pin: int, trigger_pin: int, gpio_controller: GPIOController):
+        """
+        LightButton constructor
+        :param led_pin: LED GPIO pin
+        :type led_pin: int
+        :param trigger_pin: Button trigger pin
+        :type trigger_pin: int
+        :param gpio_controller: GPIO controller with pins initialised
+        :type gpio_controller: GPIOController
+        """
+        # Unpack args
+        self.led_pin = led_pin
+        self.trigger_pin = trigger_pin
+        self._gpio_controller = gpio_controller
+
+        # Tracker vars
+        self._light_state: bool = False
+
+    def toggle_light(self) -> bool:
+        """Toggles the light on or off."""
+        if self._light_state:
+            self._light_state = False
+        else:
+            self._light_state = True
+        self._gpio_controller.set_led(self.led_pin, self._light_state)
+        return self._light_state
+
+    def check_trigger(self) -> bool:
+        """Reads the state of the button trigger"""
+        return self._gpio_controller.read_button(self.trigger_pin)
 
 
 # Example Usage
@@ -148,9 +197,9 @@ if __name__ == "__main__":
             button_thread.start()
 
             # Example: Control LEDs via code
-            gpio_controller.set_led(0, True)  # Turn on LED 0
+            gpio_controller.set_led(17, True)  # Turn on LED 0
             time.sleep(1)
-            gpio_controller.set_led(0, False)  # Turn off LED 0
+            gpio_controller.set_led(17, False)  # Turn off LED 0
             time.sleep(1)
             client.publish_message("TEST/RACE", "CYCLE")
 
