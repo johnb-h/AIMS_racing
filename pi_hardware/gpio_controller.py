@@ -14,6 +14,7 @@ import RPi.GPIO as GPIO
 import time
 from threading import Thread
 
+
 class GPIOController:
     """
     GPIO Controller for the Raspberry Pi
@@ -53,6 +54,7 @@ class GPIOController:
         # Unpack args
         self.led_pins = led_pins
         self.button_pins = button_pins
+        print(f"LED pins: {led_pins}\nButton pins: {button_pins}")
 
         # Initialise Tracker Var
         self.running: bool = True
@@ -79,7 +81,7 @@ class GPIOController:
             print(f"LED {state}: {led_pin}")
             GPIO.output(led_pin, GPIO.HIGH if state else GPIO.LOW)
         else:
-            raise ValueError("Invalid LED index")
+            raise ValueError(f"Invalid LED {led_pin}")
 
     def read_button(self, button_pin: int) -> bool:
         """
@@ -92,13 +94,13 @@ class GPIOController:
         if button_pin in self.button_pins:
             return GPIO.input(button_pin)  # Button pressed = LOW
         else:
-            raise ValueError("Invalid button index")
+            raise ValueError(f"Invalid button {button_pin}")
 
     def monitor_buttons(self):
         """Monitor buttons and publish their status via MQTT."""
         while self.running:
-            for i, pin in enumerate(self.button_pins):
-                if self.read_button(i):  # Button pressed
+            for pin in self.button_pins:
+                if self.read_button(pin):  # Button pressed
                     print(f"Button Clicked: {pin}")
                     time.sleep(0.5)  # Debounce delay
 
@@ -165,14 +167,6 @@ if __name__ == "__main__":
     # Define GPIO pins for LEDs and Buttons
     led_pins = [17, 27, 22]
     button_pins = [5, 6, 13]
-
-    config: dict = {
-        'broker': '127.0.0.1',
-        'port': 1883,
-        'username': '',
-        'password': '',
-        'keepalive': 60
-    }
 
     # Initialize GPIOController
     gpio_controller = GPIOController(led_pins, button_pins)
