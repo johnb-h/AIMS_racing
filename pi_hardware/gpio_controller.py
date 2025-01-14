@@ -13,9 +13,6 @@ sys.path.append('../')
 import RPi.GPIO as GPIO
 import time
 from threading import Thread
-from hardware_interface import MQTTClient
-from hardware_interface import RaceCar, CarStatus, RaceCommunicationProtocol
-
 
 class GPIOController:
     """
@@ -28,8 +25,6 @@ class GPIOController:
         A list of LED pins
     button_pins: list[int]
         A list of button pins
-    mqtt_client: MQTTClient
-        MQTT Client to communicate with the Raspberry Pi
     running: bool
         Whether or not the Raspberry Pi should be running
 
@@ -46,7 +41,7 @@ class GPIOController:
         Stops the GPIO listening
     """
 
-    def __init__(self, led_pins: list[int], button_pins: list[int], mqtt_client: MQTTClient):
+    def __init__(self, led_pins: list[int], button_pins: list[int]):
         """
         Initialise the GPIOController.
 
@@ -54,13 +49,10 @@ class GPIOController:
         :type led_pins: list[int]
         :param button_pins: List of GPIO pins connected to Buttons.
         :type button_pins: list[int]
-        :param mqtt_client: An instance of your MQTT client.
-        :type mqtt_client: MQTTClient
         """
         # Unpack args
         self.led_pins = led_pins
         self.button_pins = button_pins
-        self.mqtt_client = mqtt_client
 
         # Initialise Tracker Var
         self.running: bool = True
@@ -108,8 +100,6 @@ class GPIOController:
             for i, pin in enumerate(self.button_pins):
                 if self.read_button(i):  # Button pressed
                     print(f"Button Clicked: {pin}")
-                    message = RaceCar(id=pin)
-                    self.mqtt_client.publish_message(message.topic, message.serialise())
                     time.sleep(0.5)  # Debounce delay
 
     def stop(self):
@@ -184,12 +174,8 @@ if __name__ == "__main__":
         'keepalive': 60
     }
 
-    # Connect to broker
-    client = MQTTClient(mqtt_config=config, verbose=False)
-    client.connect()
-
     # Initialize GPIOController
-    gpio_controller = GPIOController(led_pins, button_pins, client)
+    gpio_controller = GPIOController(led_pins, button_pins)
     while True:
         try:
             # Start monitoring buttons in a separate thread
@@ -201,13 +187,10 @@ if __name__ == "__main__":
             time.sleep(1)
             gpio_controller.set_led(17, False)  # Turn off LED 0
             time.sleep(1)
-            client.publish_message("TEST/RACE", "CYCLE")
 
         except KeyboardInterrupt:
             print("Stopping GPIO Controller")
             break
 
     gpio_controller.stop()
-    client.stop_loop()
-    client.disconnect()
     time.sleep(1)
