@@ -3,7 +3,7 @@ def pixels_to_meters(pixels):
     return pixels * WINDOW_WIDTH_IN_M / RESOLUTION[0]
 
 
-RESOLUTION = (1200, 800)
+RESOLUTION = (1920, 1080)
 WINDOW_WIDTH_IN_M = 400  # In meters
 WINDOW_HEIGHT_IN_M = pixels_to_meters(RESOLUTION[1])
 SCREEN_CENTER_METERS = (WINDOW_WIDTH_IN_M / 2, WINDOW_HEIGHT_IN_M / 2)
