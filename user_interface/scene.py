@@ -3,8 +3,9 @@ from typing import Optional
 from user_interface.states import State
 
 class Scene(ABC):
-    def __init__(self) -> None:
-        self._next_state = None
+    def __init__(self, shared_data: dict) -> None:
+        self.shared_data = shared_data
+        self._next_state: Optional[State] = None
 
     @abstractmethod
     def handle_events(self, events) -> None:
