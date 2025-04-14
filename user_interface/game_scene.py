@@ -368,7 +368,7 @@ class GameScene(Scene):
             elapsed_time = self.current_step
 
         elapsed_time = elapsed_time / TARGET_FPS
-        timer_text = self.font.render(f"Time: {int(elapsed_time)}s", True, (255, 255, 255))
+        timer_text = self.font.render(f"Time: {elapsed_time:.2f}s", True, (255, 255, 255))
         timer_rect = timer_text.get_rect(topright=(self.width - 20, 20))
         screen.blit(timer_text, timer_rect)
 

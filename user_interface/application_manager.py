@@ -16,7 +16,11 @@ class ApplicationManager:
     def __init__(self, window_width: Optional[int] = None, window_height: Optional[int] = None) -> None:
         # Fixed virtual resolution.
         self._base_resolution = (1920, 1080)
-        
+
+        # Basic Pygame initialization.
+        pygame.init()
+        pygame.display.set_caption("Evolving Cars")
+
         # Get screen info if dimensions not specified
         if window_width is None or window_height is None:
             screen_info = pygame.display.Info()
@@ -26,10 +30,7 @@ class ApplicationManager:
         self._window_width = window_width
         self._window_height = window_height
 
-        # Basic Pygame initialization.
-        pygame.init()
-        pygame.display.set_caption("Evolving Cars")
-        self._set_screen(window_width, window_height)
+        self._set_screen(self._window_width, self._window_height)
 
         # Create the virtual surface for drawing.
         self._virtual_surface = pygame.Surface(self._base_resolution)
