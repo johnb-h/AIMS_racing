@@ -1,8 +1,8 @@
 import pygame
 from typing import Optional
 from user_interface.constants import TARGET_FPS, MENU_FPS
-# from user_interface.game_scene import GameScene
-from user_interface.dummy_game_scene import DummyGameScene
+from user_interface.game_scene import GameScene
+# from user_interface.dummy_game_scene import DummyGameScene
 from user_interface.instructions_scene import InstructionsScene
 from user_interface.main_menu_scene import MainMenuScene
 from user_interface.name_entry_scene import NameEntryScene
@@ -39,8 +39,8 @@ class ApplicationManager:
         self._scene_map = {
             State.MAIN_MENU: MainMenuScene,
             State.INSTRUCTIONS: InstructionsScene,
-            # State.GAME: GameScene,
-            State.GAME: DummyGameScene,
+            State.GAME: GameScene,
+            # State.GAME: DummyGameScene,
             State.NAME_ENTRY: NameEntryScene,
             State.HIGH_SCORES: HighScoresScene,
         }
