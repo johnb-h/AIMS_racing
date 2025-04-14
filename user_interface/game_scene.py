@@ -282,7 +282,9 @@ class GameScene(Scene):
 
             # Draw trajectory
             if len(positions) >= 2:
-                pygame.draw.lines(trajectory_surface, car.color, False, positions, 2)
+                # Create a translucent color by adding alpha to the car's color
+                translucent_color = (*car.color, 64)  # 64 is 25% opacity
+                pygame.draw.lines(trajectory_surface, translucent_color, False, positions, 2)
 
             # Draw current position marker
             if positions:
