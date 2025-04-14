@@ -48,6 +48,9 @@ class GameScene(Scene):
                 (int(r * 255), int(g * 255), int(b * 255))
                 for r, g, b, _ in self.car_colours
             ]
+        self.countdown = True
+        self.countdown_time = 0
+        self.countdown_text = "3"
 
         self._init_display()
         self._init_track()
@@ -365,10 +368,10 @@ class GameScene(Scene):
 
     def _draw_ui(self, screen):
         """Draw UI elements including timer and instructions."""
-        font = pygame.font.Font(None, 36)
+        font = pygame.font.Font("./assets/joystix_monospace.ttf", 36)
 
         # Draw generation counter
-        gen_text = font.render(f"Generation: {self.generation}", True, (255, 255, 255))
+        gen_text = font.render(f"Round: {self.generation}", True, (255, 255, 255))
         screen.blit(gen_text, (10, 10))
 
         # Draw timer
@@ -379,21 +382,23 @@ class GameScene(Scene):
 
         elapsed_time = elapsed_time / TARGET_FPS
         timer_text = font.render(f"Time: {elapsed_time:.2f}s", True, (255, 255, 255))
-        timer_rect = timer_text.get_rect(topright=(self.width - 10, 10))
+        timer_rect = timer_text.get_rect(topright=(self.width + 500, 10))
         screen.blit(timer_text, timer_rect)
 
         # Draw instructions
         instructions = (
-            "Click crashed cars to select, press SPACE to end simulation"
+            "Racing..."
+            # Press SPACE to end simulation"
             if self.cars_driving
-            else "Click cars to select, press SPACE for next generation"
+            else "Which cars performed best?"
+            # Press SPACE for next generation"
         )
         instructions_text = font.render(instructions, True, (255, 255, 255))
         screen.blit(instructions_text, (10, self.height - 40))
 
         # Draw mean trajectory toggle instruction
-        mean_text = font.render("(m) show population mean", True, (255, 255, 255))
-        screen.blit(mean_text, (10, self.height - 80))
+        # mean_text = font.render("(m) show population mean", True, (255, 255, 255))
+        # screen.blit(mean_text, (10, self.height - 80))
 
         # Draw restart instruction
         restart_text = font.render("(r) restart", True, (255, 255, 255))
@@ -402,6 +407,32 @@ class GameScene(Scene):
         # Draw exit instruction
         exit_text = font.render("(esc) exit", True, (255, 255, 255))
         screen.blit(exit_text, (10, self.height - 160))
+
+        # Countdown from 3 to GO
+        if self.countdown:
+            self.countdown_time += 1
+            if self.countdown_time > 100:
+                self.countdown_time = 0
+                
+
+                countdown_text = font.render(self.countdown_text, True, (255, 255, 255), BACKGROUND_COLOR)
+                countdown_rect = countdown_text.get_rect(
+                    center=(self.width // 2, self.height // 2)
+                )
+                screen.blit(countdown_text, countdown_rect)
+                pygame.display.flip()
+                # pygame.time.delay(750)
+                if self.countdown_text == "3":
+                    self.countdown_text = "2"
+                elif self.countdown_text == "2":
+                    self.countdown_text = "1"
+                elif self.countdown_text == "1":
+                    self.countdown_text = "GO"
+                elif self.countdown_text == "GO":
+                    self.countdown = False
+
+
+
 
     def handle_events(self, events):
         for event in events:
@@ -476,7 +507,8 @@ class GameScene(Scene):
             if self.mean_trajectory_surface:
                 screen.blit(self.mean_trajectory_surface, (0, 0))
 
-        self._draw_cars(screen)
+        if not self.countdown:
+            self._draw_cars(screen)
         self._draw_ui(screen)
 
     def reset(self):
