@@ -9,7 +9,7 @@ WINDOW_HEIGHT_IN_M = pixels_to_meters(RESOLUTION[1])
 SCREEN_CENTER_METERS = (WINDOW_WIDTH_IN_M / 2, WINDOW_HEIGHT_IN_M / 2)
 
 # Constants
-CONST_SPEED = 50  # In m/s
+CONST_SPEED = 10  # In m/s
 CONST_STEER = -0.05  # In radians
 
 WHEELBASE = 2.5

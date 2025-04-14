@@ -5,6 +5,8 @@ import jax.numpy as jnp
 import numpy as np
 from evosax import SimpleES
 
+from user_interface.constants import CONST_SPEED
+
 
 class TrajectoryInfo(NamedTuple):
     positions: List[Tuple[float, float]]
@@ -110,7 +112,7 @@ class CarEvolution:
         pos = np.array(self.start_position, dtype=float)
         angle = 0.0
         angular_velocity = 0.0
-        base_speed = 4.0
+        base_speed = CONST_SPEED
 
         # Get steering angles
         target_velocities = self._compute_steering_angles(params)
