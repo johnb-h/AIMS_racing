@@ -13,6 +13,7 @@ from user_interface.constants import (
     TARGET_FPS,
     WINDOW_HEIGHT_IN_M,
     WINDOW_WIDTH_IN_M,
+    SPRITE_SCALE_MULTIPLIER
 )
 from user_interface.scene import Scene
 from user_interface.states import State
@@ -54,6 +55,9 @@ class GameScene(Scene):
         self.countdown_text = ""
         self.font = pygame.font.Font("./assets/joystix_monospace.ttf", 36)
         self.font_go = pygame.font.Font("./assets/joystix_monospace.ttf", 72)
+
+        # Load the F1 car sprite
+        self.f1_car_sprite = pygame.image.load("assets/cleaned_f1.tiff").convert_alpha()
 
         self._init_display()
         self._init_track()
@@ -299,37 +303,25 @@ class GameScene(Scene):
                             current_pos[1] - prev_pos[1],
                         )
                         angle = np.arctan2(dy, dx)
-                        # Arbitrary constants right now - needs changing
-                        rect_size = (
-                            CAR_LENGTH * self.track_scale,
-                            CAR_WIDTH * self.track_scale,
-                        )
 
-                        # Create a surface for the car with the correct size
-                        car_surface = pygame.Surface(
-                            rect_size, pygame.SRCALPHA
-                        )  # Surface with alpha transparency
-                        car_surface.fill(
-                            car.color
-                        )  # Fill the surface with a red colour
+                        scaled_car = pygame.transform.scale_by(self.f1_car_sprite, self.track_scale * SPRITE_SCALE_MULTIPLIER)
+
+                        # Create a colored version of the car
+                        colored_car = scaled_car.copy()
+                        colored_car.fill(car.color, special_flags=pygame.BLEND_RGBA_MULT)
 
                         # Calculate the rear axle position (pivot point for rotation)
-                        # NOTE: The signs seem wrong here (looks like I'm rotating around the front wheels?) but it looks way
-                        # more natural IMO. Maybe change later.
                         rear_axle_offset = pygame.Vector2(
-                            self.track_scale * CAR_LENGTH / 2, 0
-                        )  # Rear axle is half the car's length behind the center
-                        rear_axle_offset = rear_axle_offset.rotate_rad(
-                            angle
-                        )  # Rotate offset by car's direction
+                            scaled_car.get_width() / 2, 0  # Use the actual scaled width
+                        )
+                        rear_axle_offset = rear_axle_offset.rotate_rad(angle)
                         rear_axle_position = current_pos - rear_axle_offset
 
                         # Rotate the car surface based on the direction angle
+                        # Add 90 degrees to correct the initial orientation
                         rotated_car = pygame.transform.rotate(
-                            car_surface,
-                            -math.degrees(
-                                angle
-                            ),  # Rotate by the car's direction angle (convert radians to degrees)
+                            colored_car,
+                            -math.degrees(angle) + 90
                         )
 
                         # Get the rectangle of the rotated car for correct positioning
