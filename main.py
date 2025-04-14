@@ -11,8 +11,8 @@ def main(args):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--window_width", type=int, default=1200)
-    parser.add_argument("--window_height", type=int, default=800)
+    parser.add_argument("--window_width", type=int, default=1920)
+    parser.add_argument("--window_height", type=int, default=1080)
     args = parser.parse_args()
     return args
 

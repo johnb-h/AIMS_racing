@@ -67,8 +67,8 @@ class GameScene(Scene):
         self.height = info.current_h
         # Calculate aspect ratio preserving track dimensions
         self.track_scale = min(
-            self.width / (WINDOW_WIDTH_IN_M * 1.2),  # Add margins
-            self.height / (WINDOW_HEIGHT_IN_M * 1.2),
+            self.width / (WINDOW_WIDTH_IN_M * 1.1),  # Add margins
+            self.height / (WINDOW_HEIGHT_IN_M * 1.1),
         )
 
     def _init_track(self):
@@ -78,11 +78,11 @@ class GameScene(Scene):
 
         # Scale track dimensions based on window size while maintaining aspect ratio
         track_height = (
-            WINDOW_HEIGHT_IN_M * self.track_scale * 0.9
-        )  # 90% of scaled height
+            WINDOW_HEIGHT_IN_M * self.track_scale
+        )
         track_outer_width = (
-            WINDOW_WIDTH_IN_M * self.track_scale * 0.9
-        )  # 90% of scaled width
+            WINDOW_WIDTH_IN_M * self.track_scale
+        )
         track_inner_width = track_outer_width * 0.5  # Inner track is 50% of outer width
         track_inner_height = track_height * 0.5  # Inner track is 50% of outer height
 

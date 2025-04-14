@@ -12,7 +12,7 @@ from user_interface.states import State
 
 
 class ApplicationManager:
-    def __init__(self, window_width=1200, window_height=800):
+    def __init__(self, window_width=1920, window_height=1080):
         self._window_width = window_width
         self._window_height = window_height
 
