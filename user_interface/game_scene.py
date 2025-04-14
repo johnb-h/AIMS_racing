@@ -34,11 +34,12 @@ class Car:
 class GameScene(Scene):
     def __init__(
         self,
+        shared_data: dict,
         num_visualised_cars: int = 10,
         car_colours: Optional[List[Tuple[int, int, int]]] = None,
         show_instructions: bool = False,
     ):
-        super().__init__()
+        super().__init__(shared_data)
 
         self.num_visualised_cars = num_visualised_cars
         self.car_colours = car_colours
@@ -524,6 +525,9 @@ class GameScene(Scene):
                 if event.key == pygame.K_ESCAPE:
                     self._next_state = State.MAIN_MENU
                 elif event.key == pygame.K_SPACE:
+                    if self.finish_line_crossed:
+                        self._next_state = State.NAME_ENTRY
+                        self.shared_data["score"] = self.finish_time
                     self._handle_space_key()
                 elif event.key == pygame.K_m:
                     self.show_mean = not self.show_mean
