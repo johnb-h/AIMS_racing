@@ -36,11 +36,13 @@ class GameScene(Scene):
         self,
         num_visualised_cars: int = 10,
         car_colours: Optional[List[Tuple[int, int, int]]] = None,
+        show_instructions: bool = False,
     ):
         super().__init__()
 
         self.num_visualised_cars = num_visualised_cars
         self.car_colours = car_colours
+        self.show_instructions = show_instructions
         if self.car_colours is None:
             self.car_colours = matplotlib.cm.get_cmap("tab10")(
                 range(self.num_visualised_cars)
@@ -360,7 +362,7 @@ class GameScene(Scene):
         font = pygame.font.Font(None, 36)
 
         # Draw generation counter
-        gen_text = font.render(f"Generation: {self.generation}", True, (255, 255, 255))
+        gen_text = font.render(f"ROUND {self.generation}", True, (255, 255, 255))
         screen.blit(gen_text, (10, 10))
 
         # Draw timer
@@ -370,30 +372,31 @@ class GameScene(Scene):
             elapsed_time = self.current_step
 
         elapsed_time = elapsed_time / TARGET_FPS
-        timer_text = font.render(f"Time: {elapsed_time:.2f}s", True, (255, 255, 255))
+        timer_text = font.render(f"Time: {int(elapsed_time)}s", True, (255, 255, 255))
         timer_rect = timer_text.get_rect(topright=(self.width - 10, 10))
         screen.blit(timer_text, timer_rect)
 
-        # Draw instructions
-        instructions = (
-            "Click crashed cars to select, press SPACE to end simulation"
-            if self.cars_driving
-            else "Click cars to select, press SPACE for next generation"
-        )
-        instructions_text = font.render(instructions, True, (255, 255, 255))
-        screen.blit(instructions_text, (10, self.height - 40))
+        if self.show_instructions:
+            # Draw instructions
+            instructions = (
+                "Click crashed cars to select, press SPACE to end simulation"
+                if self.cars_driving
+                else "Click cars to select, press SPACE for next generation"
+            )
+            instructions_text = font.render(instructions, True, (255, 255, 255))
+            screen.blit(instructions_text, (10, self.height - 40))
 
-        # Draw mean trajectory toggle instruction
-        mean_text = font.render("(m) show population mean", True, (255, 255, 255))
-        screen.blit(mean_text, (10, self.height - 80))
+            # Draw mean trajectory toggle instruction
+            mean_text = font.render("(m) show population mean", True, (255, 255, 255))
+            screen.blit(mean_text, (10, self.height - 80))
 
-        # Draw restart instruction
-        restart_text = font.render("(r) restart", True, (255, 255, 255))
-        screen.blit(restart_text, (10, self.height - 120))
+            # Draw restart instruction
+            restart_text = font.render("(r) restart", True, (255, 255, 255))
+            screen.blit(restart_text, (10, self.height - 120))
 
-        # Draw exit instruction
-        exit_text = font.render("(esc) exit", True, (255, 255, 255))
-        screen.blit(exit_text, (10, self.height - 160))
+            # Draw exit instruction
+            exit_text = font.render("(esc) exit", True, (255, 255, 255))
+            screen.blit(exit_text, (10, self.height - 160))
 
     def handle_events(self, events):
         for event in events:
