@@ -60,6 +60,8 @@ class GameScene(Scene):
 
         # Load the F1 car sprite
         self.f1_car_sprite = pygame.image.load("assets/cleaned_f1.tiff").convert_alpha()
+        self.track_background = pygame.image.load("assets/Background5_1920_1080.png").convert_alpha()
+        self.background = pygame.image.load("assets/Background3_1920_1080.png").convert_alpha()
 
         self._init_display()
         self._init_track()
@@ -156,34 +158,111 @@ class GameScene(Scene):
             for angle in np.linspace(0, 2 * np.pi, 100)
         ]
 
+    def _angle_between(self, p1, p2, p3):
+        """Angle between vectors (in radians) formed by p1→p2 and p2→p3."""
+        v1 = (p1[0] - p2[0], p1[1] - p2[1])
+        v2 = (p3[0] - p2[0], p3[1] - p2[1])
+        dot = v1[0]*v2[0] + v1[1]*v2[1]
+        mag1 = math.hypot(*v1)
+        mag2 = math.hypot(*v2)
+        if mag1 == 0 or mag2 == 0:
+            return 0
+        cos_angle = max(-1, min(1, dot / (mag1 * mag2)))
+        return math.acos(cos_angle)
+
+    def _draw_track_outline_checkered_line(self, surface, points, base_length=12, width=10, min_length=10, max_length=20, curve_threshold=0.9775):
+        red = (255, 0, 0)
+        white = (255, 255, 255)
+
+        n = len(points)
+
+        for i in range(n):
+            start = points[i]
+            end = points[(i + 1) % n]
+            next_pt = points[(i + 2) % n]
+
+            # Calculate curvature
+            curve_angle = self._angle_between(start, end, next_pt)
+            curvature = curve_angle / math.pi  # Normalize to 0–1
+
+            dx = end[0] - start[0]
+            dy = end[1] - start[1]
+            distance = math.hypot(dx, dy)
+            angle = math.atan2(dy, dx)
+
+            if curvature < curve_threshold:
+                # Curved section → red-white curb
+                segment_length = max(min_length, min(max_length, base_length * (1.0 - curvature + 0.1)))
+                segments = max(1, int(distance // segment_length))
+
+                for s in range(segments):
+                    t = s / segments
+                    x = start[0] + dx * t
+                    y = start[1] + dy * t
+
+                    color = red if s % 2 == 0 else white
+
+                    rect = pygame.Surface((segment_length, width), pygame.SRCALPHA)
+                    rect.fill(color)
+
+                    rotated = pygame.transform.rotate(rect, -math.degrees(angle))
+                    offset_x = rotated.get_width() / 2
+                    offset_y = rotated.get_height() / 2
+                    surface.blit(rotated, (x - offset_x, y - offset_y))
+            else:
+                # Straight section → solid white line
+                pygame.draw.line(surface, white, start, end, width)
+
     def _create_track_surface(self) -> pygame.Surface:
         """Create the static track surface with boundaries and finish line."""
+        # Create a surface for the track using custom image
+        # Load and prepare texture
+        track_background = self.track_background
+        # Final surface to return
         surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-
-        # Draw the filled track area
-        pygame.draw.polygon(surface, TRACK_COLOR, self.track_outer)
-        pygame.draw.polygon(
-            surface, (0, 0, 0, 0), self.track_inner
-        )  # Cut out the inner area
+        # 1. Create a mask surface with per-pixel alpha
+        track_mask = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        # 2. Fill the outer polygon (opaque)
+        pygame.draw.polygon(track_mask, (255, 255, 255, 255), self.track_outer)
+        # 3. Cut out the inner polygon (transparent)
+        pygame.draw.polygon(track_mask, (0, 0, 0, 0), self.track_inner)
+        # 4. Create texture surface with tiling
+        texture_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        tex_w, tex_h = track_background.get_size()
+        for x in range(0, self.width, tex_w):
+            for y in range(0, self.height, tex_h):
+                texture_surface.blit(track_background, (x, y))
+        # 5. Apply mask
+        texture_surface.blit(track_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        # 6. Blit the masked texture onto the main surface
+        surface.blit(texture_surface, (0, 0))
 
         # Draw track boundaries
-        pygame.draw.lines(surface, (255, 0, 0), True, self.track_outer, 2)
-        pygame.draw.lines(surface, (255, 0, 0), True, self.track_inner, 2)
+        self._draw_track_outline_checkered_line(surface, self.track_outer)
+        self._draw_track_outline_checkered_line(surface, self.track_inner)
 
         # Draw finish line
+        x_start = self.finish_line[0][0]
+        y_start = self.finish_line[0][1]
+        x_end = self.finish_line[1][0]
+        y_end = self.finish_line[1][1]
+
+        total_height = y_end - y_start
+        stripe_width = 8
         stripe_height = 8
-        total_height = self.finish_line[1][1] - self.finish_line[0][1]
-        for i in range(int(total_height // stripe_height)):
-            start_y = self.finish_line[0][1] + i * stripe_height
-            end_y = min(start_y + stripe_height, self.finish_line[1][1])
-            color = (255, 255, 255) if i % 2 == 0 else (0, 0, 0)
-            pygame.draw.line(
-                surface,
-                color,
-                (self.finish_line[0][0], start_y),
-                (self.finish_line[0][0], end_y),
-                4,
-            )
+        total_width = stripe_width * 3  # Number of stripes in the finish line
+
+        for row in range(int(total_height // stripe_height)):
+            for col in range(3):  # Number of stripes
+                color = (255, 255, 255) if (row + col) % 2 == 0 else (0, 0, 0)
+                rect = pygame.Rect(
+                    x_start + col * stripe_width,
+                    y_start + row * stripe_height,
+                    stripe_width,
+                    stripe_height,
+                )
+                pygame.draw.rect(surface, color, rect)
+
         return surface
 
     def _check_finish_line_crossing(
@@ -399,7 +478,7 @@ class GameScene(Scene):
 
         # Countdown from 3 to GO
         if self.countdown:
-            countdown_text = self.font_go.render(self.countdown_text, True, (255, 255, 255), BACKGROUND_COLOR)
+            countdown_text = self.font_go.render(self.countdown_text, True, (255, 255, 255))
             countdown_rect = countdown_text.get_rect(
                 center=(self.width // 2, self.height // 2)
             )
@@ -491,10 +570,15 @@ class GameScene(Scene):
         if self.countdown:
             return
         self.current_step += 1
+        if self._next_state is not None:
+            self.countdown = True
+            self.countdown_text = ""
+            self.countdown_time = pygame.time.get_ticks()
         return self._next_state
 
     def draw(self, screen):
-        screen.fill(BACKGROUND_COLOR)
+        background = self.background
+        screen.blit(background, (0, 0))
         screen.blit(self.track_surface, (0, 0))
 
         if self.show_mean:
