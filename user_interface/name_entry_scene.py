@@ -22,7 +22,7 @@ class NameEntryScene(Scene):
     def __init__(self, shared_data: dict) -> None:
         super().__init__(shared_data)
         # Load fonts.
-        self.title_font = pygame.font.Font("./assets/joystix_monospace.ttf", 120)
+        self.title_font = pygame.font.Font("./assets/joystix_monospace.ttf", 110)
         self.body_font = pygame.font.Font("./assets/joystix_monospace.ttf", 72)
         self.prompt_font = pygame.font.Font("./assets/joystix_monospace.ttf", 36)
 
@@ -76,7 +76,7 @@ class NameEntryScene(Scene):
         screen.blit(self.background, (0, 0))
         # Draw the score at the top center.
         score_x = (1920 - self.score_surface.get_width()) // 2
-        score_y = 100
+        score_y = 350
         screen.blit(self.score_surface, (score_x, score_y))
         # Draw the ranking beneath the score.
         rank_x = (1920 - self.rank_surface.get_width()) // 2
