@@ -6,9 +6,8 @@ from user_interface.constants import MENU_FPS
 
 class MainMenuScene(Scene):
     """Main menu scene that displays title, messages, and images."""
-    def __init__(self) -> None:
-        super().__init__()
-        # Use larger font sizes if needed for a 1920x1080 coordinate space.
+    def __init__(self, shared_data: dict) -> None:
+        super().__init__(shared_data)
         self.title_font = pygame.font.Font("./assets/joystix_monospace.ttf", 144)
         self.body_font = pygame.font.Font("./assets/joystix_monospace.ttf", 72)
         self.start_font = pygame.font.Font("./assets/joystix_monospace.ttf", 36)
@@ -33,10 +32,8 @@ class MainMenuScene(Scene):
             pygame.image.load("assets/Flag2_pixel.png").convert_alpha(), (400, 400)
         )
 
-        self._next_state: Optional[State] = None
         self._blink_visible = True
         self._blink_elapsed = 0.0
-
         self._update_accumulator = 0.0
         self._update_interval = 1.0 / MENU_FPS 
 
@@ -48,13 +45,11 @@ class MainMenuScene(Scene):
     def update(self, dt: float) -> Optional[State]:
         self._update_accumulator += dt
         if self._update_accumulator < self._update_interval:
-            # Not enough time has elapsed to perform another update.
             return None
 
-        # Subtract the interval (or use a while loop for robustness if dt is large).
         self._update_accumulator -= self._update_interval
 
-        # Now, update blinking or any other time-dependent logic.
+        # Update blinking text.
         self._blink_elapsed += self._update_interval
         if self._blink_elapsed >= 1.0:
             self._blink_visible = not self._blink_visible
@@ -63,32 +58,23 @@ class MainMenuScene(Scene):
         return self._next_state
 
     def draw(self, screen: pygame.Surface) -> None:
-        """Draw the scene on a 1920x1080 virtual surface so that all assets show in full."""
-        # The virtual surface is assumed to be 1920x1080.
-        # Draw the full background (no cropping).
         screen.blit(self.background, (0, 0))
-
-        # Draw title centered at the top.
         title_shadow_x = (1920 - self.title_shadow_surface.get_width()) // 2 + 10
         title_y = 150
         screen.blit(self.title_shadow_surface, (title_shadow_x, title_y))
         title_x = (1920 - self.title_surface.get_width()) // 2
         screen.blit(self.title_surface, (title_x, title_y))
 
-        # Draw the body messages.
         body1_x = (1920 - self.body1_surface.get_width()) // 2
         screen.blit(self.body1_surface, (body1_x, 400))
         body2_x = (1920 - self.body2_surface.get_width()) // 2
         screen.blit(self.body2_surface, (body2_x, 500))
 
-        # Draw additional images positioned within the 1920x1080 space.
-        screen.blit(self.cup, (50, 1080 - self.cup.get_height() - 50))  # Bottom left
-        screen.blit(self.car, (1920 - self.car.get_width() - 50, 1080 - self.car.get_height() - 50))  # Bottom right
+        screen.blit(self.cup, (50, 1080 - self.cup.get_height() - 50))
+        screen.blit(self.car, (1920 - self.car.get_width() - 50, 1080 - self.car.get_height() - 50))
         flag_x = (1920 - self.flag.get_width()) // 2
-        # Place flag slightly above the bottom edge.
         screen.blit(self.flag, (flag_x, 1080 - self.flag.get_height() - 50))
 
-        # Draw blinking instruction text centered near the bottom.
         blink_surface = self.body3_surface if self._blink_visible else self.off_body3_surface
         blink_rect = blink_surface.get_rect(center=(1920 // 2, 1080 - 100))
         screen.blit(blink_surface, blink_rect)
