@@ -48,9 +48,12 @@ class GameScene(Scene):
                 (int(r * 255), int(g * 255), int(b * 255))
                 for r, g, b, _ in self.car_colours
             ]
+        self.crashed_time = None
         self.countdown = True
-        self.countdown_time = 0
-        self.countdown_text = "3"
+        self.countdown_time = pygame.time.get_ticks()
+        self.countdown_text = ""
+        self.font = pygame.font.Font("./assets/joystix_monospace.ttf", 36)
+        self.font_go = pygame.font.Font("./assets/joystix_monospace.ttf", 72)
 
         self._init_display()
         self._init_track()
@@ -200,6 +203,7 @@ class GameScene(Scene):
             for traj, color in zip(self.evolution.ask(), self.car_colours)
         ]
         self.current_step = 0
+        self.crashed_time = None
         self.cars_driving = True
         self.finish_line_crossed = False
         self.finish_time = None
@@ -363,26 +367,28 @@ class GameScene(Scene):
 
         if all_cars_crashed:
             self.cars_driving = False
+            if self.crashed_time is None:
+                self.crashed_time = self.current_step
 
         screen.blit(trajectory_surface, (0, 0))
 
     def _draw_ui(self, screen):
         """Draw UI elements including timer and instructions."""
-        font = pygame.font.Font("./assets/joystix_monospace.ttf", 36)
-
         # Draw generation counter
-        gen_text = font.render(f"Round: {self.generation}", True, (255, 255, 255))
-        screen.blit(gen_text, (10, 10))
+        gen_text = self.font.render(f"Round: {self.generation}", True, (255, 255, 255))
+        screen.blit(gen_text, (20, 20))
 
         # Draw timer
         if self.finish_line_crossed and self.finish_time is not None:
             elapsed_time = self.finish_time
+        elif self.crashed_time is not None:
+            elapsed_time = self.crashed_time
         else:
             elapsed_time = self.current_step
 
         elapsed_time = elapsed_time / TARGET_FPS
-        timer_text = font.render(f"Time: {elapsed_time:.2f}s", True, (255, 255, 255))
-        timer_rect = timer_text.get_rect(topright=(self.width + 500, 10))
+        timer_text = self.font.render(f"Time: {elapsed_time:.2f}s", True, (255, 255, 255))
+        timer_rect = timer_text.get_rect(topright=(self.width - 20, 20))
         screen.blit(timer_text, timer_rect)
 
         # Draw instructions
@@ -393,46 +399,50 @@ class GameScene(Scene):
             else "Which cars performed best?"
             # Press SPACE for next generation"
         )
-        instructions_text = font.render(instructions, True, (255, 255, 255))
-        screen.blit(instructions_text, (10, self.height - 40))
 
         # Draw mean trajectory toggle instruction
-        # mean_text = font.render("(m) show population mean", True, (255, 255, 255))
+        # mean_text = self.font.render("(m) show population mean", True, (255, 255, 255))
         # screen.blit(mean_text, (10, self.height - 80))
 
         # Draw restart instruction
-        restart_text = font.render("(r) restart", True, (255, 255, 255))
-        screen.blit(restart_text, (10, self.height - 120))
+        restart_text = self.font.render("(r) restart", True, (255, 255, 255))
+        screen.blit(restart_text, (20, self.height - 120))
 
         # Draw exit instruction
-        exit_text = font.render("(esc) exit", True, (255, 255, 255))
-        screen.blit(exit_text, (10, self.height - 160))
+        exit_text = self.font.render("(esc) exit", True, (255, 255, 255))
+        screen.blit(exit_text, (20, self.height - 160))
+
+        # Draw next instruction
+        next_text = self.font.render("(space) next", True, (255, 255, 255))
+        screen.blit(next_text, (20, self.height - 80))
 
         # Countdown from 3 to GO
         if self.countdown:
-            self.countdown_time += 1
-            if self.countdown_time > 100:
-                self.countdown_time = 0
-                
-
-                countdown_text = font.render(self.countdown_text, True, (255, 255, 255), BACKGROUND_COLOR)
-                countdown_rect = countdown_text.get_rect(
-                    center=(self.width // 2, self.height // 2)
-                )
-                screen.blit(countdown_text, countdown_rect)
-                pygame.display.flip()
-                # pygame.time.delay(750)
-                if self.countdown_text == "3":
+            countdown_text = self.font_go.render(self.countdown_text, True, (255, 255, 255), BACKGROUND_COLOR)
+            countdown_rect = countdown_text.get_rect(
+                center=(self.width // 2, self.height // 2)
+            )
+            screen.blit(countdown_text, countdown_rect)
+            pygame.display.flip()
+            if pygame.time.get_ticks() - self.countdown_time > 1000:
+                self.countdown_time = pygame.time.get_ticks()
+                if self.countdown_text == "":
+                    self.countdown_text = "3"
+                elif self.countdown_text == "3":
                     self.countdown_text = "2"
                 elif self.countdown_text == "2":
                     self.countdown_text = "1"
                 elif self.countdown_text == "1":
-                    self.countdown_text = "GO"
-                elif self.countdown_text == "GO":
+                    self.countdown_text = "GO!"
+                elif self.countdown_text == "GO!":
                     self.countdown = False
-
-
-
+        else:
+            # Place instructions in the middle of the screen
+            instructions_text = self.font.render(instructions, True, (255, 255, 255))
+            instructions_rect = instructions_text.get_rect(
+                center=(self.width // 2, self.height // 2)
+            )
+            screen.blit(instructions_text, instructions_rect)
 
     def handle_events(self, events):
         for event in events:
@@ -475,6 +485,8 @@ class GameScene(Scene):
         self.generate_new_population()
 
     def _handle_space_key(self):
+        if self.countdown:
+            return
         if self.cars_driving:
             max_steps = max(len(car.positions) for car in self.cars)
             if hasattr(self.evolution, "displayed_crash_steps"):
@@ -495,6 +507,8 @@ class GameScene(Scene):
                 self.generate_new_population()
 
     def update(self, dt):
+        if self.countdown:
+            return
         self.current_step += 1
         return self._next_state
 
