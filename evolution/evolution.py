@@ -172,9 +172,10 @@ class CarEvolution:
         )
 
         # Store display information
-        self.displayed_indices = np.concatenate(
-            [best_indices, worst_indices, random_indices]
-        )
+        indices = np.concatenate([best_indices, worst_indices, random_indices])
+        # Randomly shuffle so the best cars don't always have the same colours.
+        self.rng, rng_shuffle = jax.random.split(self.rng)
+        self.displayed_indices = jax.random.permutation(rng_shuffle, indices)
         self.displayed_crashed = [self.crashed[i] for i in self.displayed_indices]
         self.displayed_crash_steps = [
             self.crash_steps[i] for i in self.displayed_indices
