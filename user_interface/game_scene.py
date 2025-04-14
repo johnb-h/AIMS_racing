@@ -333,26 +333,11 @@ class GameScene(Scene):
 
                     # Draw crash marker
                     if crashed and max_step >= crash_step:
-                        size = 15
-                        pygame.draw.line(
-                            trajectory_surface,
-                            (255, 0, 0),
-                            (current_pos[0] - size, current_pos[1] - size),
-                            (current_pos[0] + size, current_pos[1] + size),
-                            2,
-                        )
-                        pygame.draw.line(
-                            trajectory_surface,
-                            (255, 0, 0),
-                            (current_pos[0] - size, current_pos[1] + size),
-                            (current_pos[0] + size, current_pos[1] - size),
-                            2,
-                        )
+                        pass
 
             # Draw selection highlight
             if car.selected:
-                pos = positions[-1] if positions else car.positions[0]
-                pygame.draw.circle(trajectory_surface, (255, 255, 0), pos, 15, 2)
+                pygame.draw.rect(trajectory_surface, (0, 255, 0), rotated_car_rect, width=2)
 
         if all_cars_crashed:
             self.cars_driving = False
