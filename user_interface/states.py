@@ -5,3 +5,4 @@ class State(Enum):
     INSTRUCTIONS = "instructions"
     GAME = "game"
     NAME_ENTRY = "name_entry"
+    HIGH_SCORES = "high_scores"
