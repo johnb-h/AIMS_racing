@@ -12,13 +12,19 @@ from user_interface.states import State
 
 
 class ApplicationManager:
-    def __init__(self, window_width=1920, window_height=1080):
-        self._window_width = window_width
-        self._window_height = window_height
-
+    def __init__(self, window_width=None, window_height=None):
         # Initialize pygame first
         pygame.init()
         pygame.display.set_caption("Evolving Cars")
+
+        # Get screen info if dimensions not specified
+        if window_width is None or window_height is None:
+            screen_info = pygame.display.Info()
+            window_width = window_width or screen_info.current_w
+            window_height = window_height or screen_info.current_h
+
+        self._window_width = window_width
+        self._window_height = window_height
 
         # Create scenes before setting up the screen
         self._state = State.MAIN_MENU
