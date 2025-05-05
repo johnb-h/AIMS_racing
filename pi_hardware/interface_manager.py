@@ -84,7 +84,7 @@ class InterfaceManager:
                 button.toggle_light()
             sleep_time -= 0.1
 
-    def loop(self):
+    def hardware_loop(self):
         """Loops through checking the buttons and toggle lights where needed"""
         while not self._kill:
             for key, button in self.buttons.items():
@@ -94,6 +94,16 @@ class InterfaceManager:
                     self.mqtt_client.publish_message(RaceCar.topic, msg.serialise())
                     time.sleep(0.3)
             time.sleep(0.05)
+
+    def mqtt_loop(self):
+        """Monitors the MQTT client for messages and deals with them appropriately"""
+        self.mqtt_client.start_loop()
+        while not self._kill:
+            while not self.mqtt_client.queue_empty():
+                topic, msg = self.mqtt_client.pop_queue()
+                print(f"{topic}: {msg}")
+            time.sleep(0.05)
+        self.mqtt_client.stop_loop()
 
     def stop(self):
         """Stops manager"""
@@ -110,7 +120,7 @@ if __name__ == '__main__':
     mqtt_client.connect()
     manager = InterfaceManager(mqtt_client=mqtt_client,
                                pin_configuration="pins.json")
-    manager.loop()
+    manager.hardware_loop()
     while True:
         try:
             time.sleep(0.05)

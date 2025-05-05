@@ -138,11 +138,11 @@ class MQTTClient:
         """
         self._client.disconnect()
 
-    def queue_empty(self):
+    def queue_empty(self) -> bool:
         """Returns bool of if queue is empty"""
         return self._msg_queue.empty()
 
-    def pop_queue(self):
+    def pop_queue(self) -> tuple[str, str]:
         """Pops element from the queue"""
         if not self.queue_empty():
             return self._msg_queue.get()
