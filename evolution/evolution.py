@@ -5,6 +5,8 @@ import jax.numpy as jnp
 import numpy as np
 from evosax import SimpleES
 
+from user_interface.constants import CONST_SPEED
+
 
 class TrajectoryInfo(NamedTuple):
     positions: List[Tuple[float, float]]
@@ -110,7 +112,7 @@ class CarEvolution:
         pos = np.array(self.start_position, dtype=float)
         angle = 0.0
         angular_velocity = 0.0
-        base_speed = 4.0
+        base_speed = CONST_SPEED
 
         # Get steering angles
         target_velocities = self._compute_steering_angles(params)
@@ -170,9 +172,10 @@ class CarEvolution:
         )
 
         # Store display information
-        self.displayed_indices = np.concatenate(
-            [best_indices, worst_indices, random_indices]
-        )
+        indices = np.concatenate([best_indices, worst_indices, random_indices])
+        # Randomly shuffle so the best cars don't always have the same colours.
+        self.rng, rng_shuffle = jax.random.split(self.rng)
+        self.displayed_indices = jax.random.permutation(rng_shuffle, indices)
         self.displayed_crashed = [self.crashed[i] for i in self.displayed_indices]
         self.displayed_crash_steps = [
             self.crash_steps[i] for i in self.displayed_indices

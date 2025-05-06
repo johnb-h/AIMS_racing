@@ -20,7 +20,7 @@ pdm install
 
 Run the visualization:
 ```bash
-pdm run python run.py
+pdm run python main.py
 ```
 
 ### Controls

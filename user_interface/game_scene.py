@@ -13,6 +13,7 @@ from user_interface.constants import (
     TARGET_FPS,
     WINDOW_HEIGHT_IN_M,
     WINDOW_WIDTH_IN_M,
+    SPRITE_SCALE_MULTIPLIER
 )
 from user_interface.scene import Scene
 from user_interface.states import State
@@ -33,13 +34,16 @@ class Car:
 class GameScene(Scene):
     def __init__(
         self,
+        shared_data: dict,
         num_visualised_cars: int = 10,
         car_colours: Optional[List[Tuple[int, int, int]]] = None,
+        show_instructions: bool = False,
     ):
-        super().__init__()
+        super().__init__(shared_data)
 
         self.num_visualised_cars = num_visualised_cars
         self.car_colours = car_colours
+        self.show_instructions = show_instructions
         if self.car_colours is None:
             self.car_colours = matplotlib.cm.get_cmap("tab10")(
                 range(self.num_visualised_cars)
@@ -48,6 +52,17 @@ class GameScene(Scene):
                 (int(r * 255), int(g * 255), int(b * 255))
                 for r, g, b, _ in self.car_colours
             ]
+        self.crashed_time = None
+        self.countdown = True
+        self.countdown_time = pygame.time.get_ticks()
+        self.countdown_text = ""
+        self.font = pygame.font.Font("./assets/joystix_monospace.ttf", 36)
+        self.font_go = pygame.font.Font("./assets/joystix_monospace.ttf", 72)
+
+        # Load the F1 car sprite
+        self.f1_car_sprite = pygame.image.load("assets/cleaned_f1.tiff").convert_alpha()
+        self.track_background = pygame.image.load("assets/Background5_1920_1080.png").convert_alpha()
+        self.background = pygame.image.load("assets/Background3_1920_1080.png").convert_alpha()
 
         self._init_display()
         self._init_track()
@@ -63,8 +78,8 @@ class GameScene(Scene):
         self.height = info.current_h
         # Calculate aspect ratio preserving track dimensions
         self.track_scale = min(
-            self.width / (WINDOW_WIDTH_IN_M * 1.2),  # Add margins
-            self.height / (WINDOW_HEIGHT_IN_M * 1.2),
+            self.width / (WINDOW_WIDTH_IN_M * 1.1),  # Add margins
+            self.height / (WINDOW_HEIGHT_IN_M * 1.1),
         )
 
     def _init_track(self):
@@ -74,11 +89,11 @@ class GameScene(Scene):
 
         # Scale track dimensions based on window size while maintaining aspect ratio
         track_height = (
-            WINDOW_HEIGHT_IN_M * self.track_scale * 0.9
-        )  # 90% of scaled height
+            WINDOW_HEIGHT_IN_M * self.track_scale
+        )
         track_outer_width = (
-            WINDOW_WIDTH_IN_M * self.track_scale * 0.9
-        )  # 90% of scaled width
+            WINDOW_WIDTH_IN_M * self.track_scale
+        )
         track_inner_width = track_outer_width * 0.5  # Inner track is 50% of outer width
         track_inner_height = track_height * 0.5  # Inner track is 50% of outer height
 
@@ -144,34 +159,111 @@ class GameScene(Scene):
             for angle in np.linspace(0, 2 * np.pi, 100)
         ]
 
+    def _angle_between(self, p1, p2, p3):
+        """Angle between vectors (in radians) formed by p1→p2 and p2→p3."""
+        v1 = (p1[0] - p2[0], p1[1] - p2[1])
+        v2 = (p3[0] - p2[0], p3[1] - p2[1])
+        dot = v1[0]*v2[0] + v1[1]*v2[1]
+        mag1 = math.hypot(*v1)
+        mag2 = math.hypot(*v2)
+        if mag1 == 0 or mag2 == 0:
+            return 0
+        cos_angle = max(-1, min(1, dot / (mag1 * mag2)))
+        return math.acos(cos_angle)
+
+    def _draw_track_outline_checkered_line(self, surface, points, base_length=12, width=10, min_length=10, max_length=20, curve_threshold=0.9775):
+        red = (255, 0, 0)
+        white = (255, 255, 255)
+
+        n = len(points)
+
+        for i in range(n):
+            start = points[i]
+            end = points[(i + 1) % n]
+            next_pt = points[(i + 2) % n]
+
+            # Calculate curvature
+            curve_angle = self._angle_between(start, end, next_pt)
+            curvature = curve_angle / math.pi  # Normalize to 0–1
+
+            dx = end[0] - start[0]
+            dy = end[1] - start[1]
+            distance = math.hypot(dx, dy)
+            angle = math.atan2(dy, dx)
+
+            if curvature < curve_threshold:
+                # Curved section → red-white curb
+                segment_length = max(min_length, min(max_length, base_length * (1.0 - curvature + 0.1)))
+                segments = max(1, int(distance // segment_length))
+
+                for s in range(segments):
+                    t = s / segments
+                    x = start[0] + dx * t
+                    y = start[1] + dy * t
+
+                    color = red if s % 2 == 0 else white
+
+                    rect = pygame.Surface((segment_length, width), pygame.SRCALPHA)
+                    rect.fill(color)
+
+                    rotated = pygame.transform.rotate(rect, -math.degrees(angle))
+                    offset_x = rotated.get_width() / 2
+                    offset_y = rotated.get_height() / 2
+                    surface.blit(rotated, (x - offset_x, y - offset_y))
+            else:
+                # Straight section → solid white line
+                pygame.draw.line(surface, white, start, end, width)
+
     def _create_track_surface(self) -> pygame.Surface:
         """Create the static track surface with boundaries and finish line."""
+        # Create a surface for the track using custom image
+        # Load and prepare texture
+        track_background = self.track_background
+        # Final surface to return
         surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-
-        # Draw the filled track area
-        pygame.draw.polygon(surface, TRACK_COLOR, self.track_outer)
-        pygame.draw.polygon(
-            surface, (0, 0, 0, 0), self.track_inner
-        )  # Cut out the inner area
+        # 1. Create a mask surface with per-pixel alpha
+        track_mask = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        # 2. Fill the outer polygon (opaque)
+        pygame.draw.polygon(track_mask, (255, 255, 255, 255), self.track_outer)
+        # 3. Cut out the inner polygon (transparent)
+        pygame.draw.polygon(track_mask, (0, 0, 0, 0), self.track_inner)
+        # 4. Create texture surface with tiling
+        texture_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        tex_w, tex_h = track_background.get_size()
+        for x in range(0, self.width, tex_w):
+            for y in range(0, self.height, tex_h):
+                texture_surface.blit(track_background, (x, y))
+        # 5. Apply mask
+        texture_surface.blit(track_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        # 6. Blit the masked texture onto the main surface
+        surface.blit(texture_surface, (0, 0))
 
         # Draw track boundaries
-        pygame.draw.lines(surface, (255, 0, 0), True, self.track_outer, 2)
-        pygame.draw.lines(surface, (255, 0, 0), True, self.track_inner, 2)
+        self._draw_track_outline_checkered_line(surface, self.track_outer)
+        self._draw_track_outline_checkered_line(surface, self.track_inner)
 
         # Draw finish line
+        x_start = self.finish_line[0][0]
+        y_start = self.finish_line[0][1]
+        x_end = self.finish_line[1][0]
+        y_end = self.finish_line[1][1]
+
+        total_height = y_end - y_start
+        stripe_width = 8
         stripe_height = 8
-        total_height = self.finish_line[1][1] - self.finish_line[0][1]
-        for i in range(int(total_height // stripe_height)):
-            start_y = self.finish_line[0][1] + i * stripe_height
-            end_y = min(start_y + stripe_height, self.finish_line[1][1])
-            color = (255, 255, 255) if i % 2 == 0 else (0, 0, 0)
-            pygame.draw.line(
-                surface,
-                color,
-                (self.finish_line[0][0], start_y),
-                (self.finish_line[0][0], end_y),
-                4,
-            )
+        total_width = stripe_width * 3  # Number of stripes in the finish line
+
+        for row in range(int(total_height // stripe_height)):
+            for col in range(3):  # Number of stripes
+                color = (255, 255, 255) if (row + col) % 2 == 0 else (0, 0, 0)
+                rect = pygame.Rect(
+                    x_start + col * stripe_width,
+                    y_start + row * stripe_height,
+                    stripe_width,
+                    stripe_height,
+                )
+                pygame.draw.rect(surface, color, rect)
+
         return surface
 
     def _check_finish_line_crossing(
@@ -197,6 +289,7 @@ class GameScene(Scene):
             for traj, color in zip(self.evolution.ask(), self.car_colours)
         ]
         self.current_step = 0
+        self.crashed_time = None
         self.cars_driving = True
         self.finish_line_crossed = False
         self.finish_time = None
@@ -276,7 +369,9 @@ class GameScene(Scene):
 
             # Draw trajectory
             if len(positions) >= 2:
-                pygame.draw.lines(trajectory_surface, car.color, False, positions, 2)
+                # Create a translucent color by adding alpha to the car's color
+                translucent_color = (*car.color, 64)  # 64 is 25% opacity
+                pygame.draw.lines(trajectory_surface, translucent_color, False, positions, 2)
 
             # Draw current position marker
             if positions:
@@ -292,37 +387,25 @@ class GameScene(Scene):
                             current_pos[1] - prev_pos[1],
                         )
                         angle = np.arctan2(dy, dx)
-                        # Arbitrary constants right now - needs changing
-                        rect_size = (
-                            CAR_LENGTH * self.track_scale,
-                            CAR_WIDTH * self.track_scale,
-                        )
 
-                        # Create a surface for the car with the correct size
-                        car_surface = pygame.Surface(
-                            rect_size, pygame.SRCALPHA
-                        )  # Surface with alpha transparency
-                        car_surface.fill(
-                            car.color
-                        )  # Fill the surface with a red colour
+                        scaled_car = pygame.transform.scale_by(self.f1_car_sprite, self.track_scale * SPRITE_SCALE_MULTIPLIER)
+
+                        # Create a colored version of the car
+                        colored_car = scaled_car.copy()
+                        colored_car.fill(car.color, special_flags=pygame.BLEND_RGBA_MULT)
 
                         # Calculate the rear axle position (pivot point for rotation)
-                        # NOTE: The signs seem wrong here (looks like I'm rotating around the front wheels?) but it looks way
-                        # more natural IMO. Maybe change later.
                         rear_axle_offset = pygame.Vector2(
-                            self.track_scale * CAR_LENGTH / 2, 0
-                        )  # Rear axle is half the car's length behind the center
-                        rear_axle_offset = rear_axle_offset.rotate_rad(
-                            angle
-                        )  # Rotate offset by car's direction
+                            scaled_car.get_width() / 2, 0  # Use the actual scaled width
+                        )
+                        rear_axle_offset = rear_axle_offset.rotate_rad(angle)
                         rear_axle_position = current_pos - rear_axle_offset
 
                         # Rotate the car surface based on the direction angle
+                        # Add 90 degrees to correct the initial orientation
                         rotated_car = pygame.transform.rotate(
-                            car_surface,
-                            -math.degrees(
-                                angle
-                            ),  # Rotate by the car's direction angle (convert radians to degrees)
+                            colored_car,
+                            -math.degrees(angle) + 90
                         )
 
                         # Get the rectangle of the rotated car for correct positioning
@@ -337,71 +420,90 @@ class GameScene(Scene):
 
                     # Draw crash marker
                     if crashed and max_step >= crash_step:
-                        size = 15
-                        pygame.draw.line(
-                            trajectory_surface,
-                            (255, 0, 0),
-                            (current_pos[0] - size, current_pos[1] - size),
-                            (current_pos[0] + size, current_pos[1] + size),
-                            2,
-                        )
-                        pygame.draw.line(
-                            trajectory_surface,
-                            (255, 0, 0),
-                            (current_pos[0] - size, current_pos[1] + size),
-                            (current_pos[0] + size, current_pos[1] - size),
-                            2,
-                        )
+                        pass
 
             # Draw selection highlight
             if car.selected:
-                pos = positions[-1] if positions else car.positions[0]
-                pygame.draw.circle(trajectory_surface, (255, 255, 0), pos, 15, 2)
+                pygame.draw.rect(trajectory_surface, (0, 255, 0), rotated_car_rect, width=2)
 
         if all_cars_crashed:
             self.cars_driving = False
+            if self.crashed_time is None:
+                self.crashed_time = self.current_step
 
         screen.blit(trajectory_surface, (0, 0))
 
     def _draw_ui(self, screen):
         """Draw UI elements including timer and instructions."""
-        font = pygame.font.Font(None, 36)
-
         # Draw generation counter
-        gen_text = font.render(f"Generation: {self.generation}", True, (255, 255, 255))
-        screen.blit(gen_text, (10, 10))
+        gen_text = self.font.render(f"Round: {self.generation}", True, (255, 255, 255))
+        screen.blit(gen_text, (20, 20))
 
         # Draw timer
         if self.finish_line_crossed and self.finish_time is not None:
             elapsed_time = self.finish_time
+        elif self.crashed_time is not None:
+            elapsed_time = self.crashed_time
         else:
             elapsed_time = self.current_step
 
         elapsed_time = elapsed_time / TARGET_FPS
-        timer_text = font.render(f"Time: {elapsed_time:.2f}s", True, (255, 255, 255))
-        timer_rect = timer_text.get_rect(topright=(self.width - 10, 10))
+        timer_text = self.font.render(f"Time: {elapsed_time:.2f}s", True, (255, 255, 255))
+        timer_rect = timer_text.get_rect(topright=(self.width - 20, 20))
         screen.blit(timer_text, timer_rect)
 
         # Draw instructions
         instructions = (
-            "Click crashed cars to select, press SPACE to end simulation"
+            "Racing..."
+            # Press SPACE to end simulation"
             if self.cars_driving
-            else "Click cars to select, press SPACE for next generation"
+            else "Which cars performed best?"
+            # Press SPACE for next generation"
         )
-        instructions_text = font.render(instructions, True, (255, 255, 255))
-        screen.blit(instructions_text, (10, self.height - 40))
 
         # Draw mean trajectory toggle instruction
-        mean_text = font.render("(m) show population mean", True, (255, 255, 255))
-        screen.blit(mean_text, (10, self.height - 80))
+        # mean_text = self.font.render("(m) show population mean", True, (255, 255, 255))
+        # screen.blit(mean_text, (10, self.height - 80))
 
         # Draw restart instruction
-        restart_text = font.render("(r) restart", True, (255, 255, 255))
-        screen.blit(restart_text, (10, self.height - 120))
+        restart_text = self.font.render("(r) restart", True, (255, 255, 255))
+        screen.blit(restart_text, (20, self.height - 120))
 
         # Draw exit instruction
-        exit_text = font.render("(esc) exit", True, (255, 255, 255))
-        screen.blit(exit_text, (10, self.height - 160))
+        exit_text = self.font.render("(esc) exit", True, (255, 255, 255))
+        screen.blit(exit_text, (20, self.height - 160))
+
+        # Draw next instruction
+        next_text = self.font.render("(space) next", True, (255, 255, 255))
+        screen.blit(next_text, (20, self.height - 80))
+
+        # Countdown from 3 to GO
+        if self.countdown:
+            countdown_text = self.font_go.render(self.countdown_text, True, (255, 255, 255))
+            countdown_rect = countdown_text.get_rect(
+                center=(self.width // 2, self.height // 2)
+            )
+            screen.blit(countdown_text, countdown_rect)
+            pygame.display.flip()
+            if pygame.time.get_ticks() - self.countdown_time > 1000:
+                self.countdown_time = pygame.time.get_ticks()
+                if self.countdown_text == "":
+                    self.countdown_text = "3"
+                elif self.countdown_text == "3":
+                    self.countdown_text = "2"
+                elif self.countdown_text == "2":
+                    self.countdown_text = "1"
+                elif self.countdown_text == "1":
+                    self.countdown_text = "GO!"
+                elif self.countdown_text == "GO!":
+                    self.countdown = False
+        else:
+            # Place instructions in the middle of the screen
+            instructions_text = self.font.render(instructions, True, (255, 255, 255))
+            instructions_rect = instructions_text.get_rect(
+                center=(self.width // 2, self.height // 2)
+            )
+            screen.blit(instructions_text, instructions_rect)
 
     def handle_events(self, events):
         for event in events:
@@ -423,6 +525,9 @@ class GameScene(Scene):
                 if event.key == pygame.K_ESCAPE:
                     self._next_state = State.MAIN_MENU
                 elif event.key == pygame.K_SPACE:
+                    if self.finish_line_crossed:
+                        self._next_state = State.NAME_ENTRY
+                        self.shared_data["score"] = self.finish_time
                     self._handle_space_key()
                 elif event.key == pygame.K_m:
                     self.show_mean = not self.show_mean
@@ -444,6 +549,8 @@ class GameScene(Scene):
         self.generate_new_population()
 
     def _handle_space_key(self):
+        if self.countdown:
+            return
         if self.cars_driving:
             max_steps = max(len(car.positions) for car in self.cars)
             if hasattr(self.evolution, "displayed_crash_steps"):
@@ -464,11 +571,18 @@ class GameScene(Scene):
                 self.generate_new_population()
 
     def update(self, dt):
+        if self.countdown:
+            return
         self.current_step += 1
+        if self._next_state is not None:
+            self.countdown = True
+            self.countdown_text = ""
+            self.countdown_time = pygame.time.get_ticks()
         return self._next_state
 
     def draw(self, screen):
-        screen.fill(BACKGROUND_COLOR)
+        background = self.background
+        screen.blit(background, (0, 0))
         screen.blit(self.track_surface, (0, 0))
 
         if self.show_mean:
@@ -476,7 +590,8 @@ class GameScene(Scene):
             if self.mean_trajectory_surface:
                 screen.blit(self.mean_trajectory_surface, (0, 0))
 
-        self._draw_cars(screen)
+        if not self.countdown:
+            self._draw_cars(screen)
         self._draw_ui(screen)
 
     def reset(self):

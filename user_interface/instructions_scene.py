@@ -1,67 +1,76 @@
 import pygame
-from itertools import cycle
-
+from typing import Optional
 from user_interface.scene import Scene
 from user_interface.states import State
+from user_interface.constants import MENU_FPS
 
-# Instructions Scene
 class InstructionsScene(Scene):
-    def __init__(self):
-        super().__init__()
+    """Scene that displays game instructions on a 1920x1080 canvas."""
+    def __init__(self, shared_data: dict) -> None:
+        super().__init__(shared_data)
         self.title_font = pygame.font.Font("./assets/joystix_monospace.ttf", 144)
         self.body_font = pygame.font.Font("./assets/joystix_monospace.ttf", 50)
         self.start_font = pygame.font.Font("./assets/joystix_monospace.ttf", 36)
-        self.screen = pygame.display.set_mode((1920, 1080))
+        
+        self.background = pygame.image.load("assets/Background2_1920_1080.png").convert()
 
-    def handle_events(self, events):
+        self.heading = self.title_font.render("INSTRUCTIONS", True, (0, 0, 0))
+        self.heading_shadow = self.title_font.render("INSTRUCTIONS", True, (65, 26, 64))
+        
+        self.blink_surface = self.start_font.render("[PRESS ANY BUTTON TO START]", True, (0, 0, 0))
+        self.blink_off_surface = self.start_font.render("", True, (0, 0, 0))
+        
+        self.instructions = [
+            "1. Look at the different cars racing.",
+            "2. Choose the best-performing car.",
+            "3. Watch them evolve and finish the track!"
+        ]
+        self.instructions_surfaces = [
+            self.body_font.render(line, True, (0, 0, 0)) for line in self.instructions
+        ]
+        self._blink_visible = True
+        self._blink_elapsed = 0.0
+        self._update_accumulator = 0.0
+        self._update_interval = 1.0 / MENU_FPS 
+
+    def handle_events(self, events) -> None:
         for ev in events:
             if ev.type == pygame.MOUSEBUTTONDOWN:
                 self._next_state = State.GAME
 
-    def update(self, dt):
+    def update(self, dt: float) -> Optional[State]:
+        self._update_accumulator += dt
+        if self._update_accumulator < self._update_interval:
+            return None
+
+        self._update_accumulator -= self._update_interval
+
+        self._blink_elapsed += self._update_interval
+        if self._blink_elapsed >= 1.0:
+            self._blink_visible = not self._blink_visible
+            self._blink_elapsed -= 1.0
+
         return self._next_state
 
-    def draw(self, screen):
-        screen_rect = self.screen.get_rect()
+    def draw(self, screen: pygame.Surface) -> None:
+        screen.blit(self.background, (0, 0))
+        
+        heading_x = (1920 - self.heading.get_width()) // 2
+        heading_y = 100
+        screen.blit(self.heading_shadow, (heading_x + 10, heading_y))
+        screen.blit(self.heading, (heading_x, heading_y))
+        
+        for i, line_surface in enumerate(self.instructions_surfaces):
+            text_x = (1920 - line_surface.get_width()) // 2
+            text_y = 400 + i * 100
+            screen.blit(line_surface, (text_x, text_y))
+        
+        blink = self.blink_surface if self._blink_visible else self.blink_off_surface
+        blink_rect = blink.get_rect(center=(1920 // 2, 1080 - 100))
+        screen.blit(blink, blink_rect)
 
-        background = pygame.image.load("assets/Background2_1920_1080.png")
-        heading = self.title_font.render("INSTRUCTIONS", True, (0, 0, 0))
-        heading_background = self.title_font.render("INSTRUCTIONS", True, (65, 26, 64))
-        body3 = self.start_font.render("[PRESS ANY BUTTON TO START]", True, (0, 0, 0))
-
-        blink_rect = body3.get_rect()
-        blink_rect.center = (screen_rect.centerx, 800)
-        off_body3 = self.start_font.render("", True, (0, 0, 0))
-        blink_surfaces = cycle([body3, off_body3])
-        blink_surface = next(blink_surfaces)
-        pygame.time.set_timer(pygame.USEREVENT, 500)
-
-        clock = pygame.time.Clock()
-
-        while True:
-            screen.blit(background, (0, 0))
-            screen.blit(heading, (screen_rect.centerx - heading.get_width() // 2, 100))
-            screen.blit(heading_background, (screen_rect.centerx - heading_background.get_width() // 2 + 10, 100))
-
-            instructions = [
-                "1. Look at the different cars racing.",
-                "2. Choose the best-performing car.",
-                "3. Watch them evolve and finish the track!"
-            ]
-            for i, line in enumerate(instructions):
-                text_surface = self.body_font.render(line, True, (0, 0, 0))
-                screen.blit(text_surface, (screen_rect.centerx - text_surface.get_width() // 2, 400 + i * 100))
-
-            for event in pygame.event.get():
-                if event.type == pygame.MOUSEBUTTONDOWN:
-                    self._next_state = State.GAME
-                    return
-                if event.type == pygame.USEREVENT:
-                    blink_surface = next(blink_surfaces)
-
-            screen.blit(blink_surface, blink_rect)
-            pygame.display.update()
-            clock.tick(60)
-
-    def reset(self):
+    def reset(self) -> None:
         self._next_state = None
+        self._blink_visible = True
+        self._blink_elapsed = 0.0
+
