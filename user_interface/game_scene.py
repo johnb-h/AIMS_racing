@@ -1,10 +1,13 @@
 import math
+import time
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 import matplotlib
 import numpy as np
 import pygame
+from hardware_interface.mqtt_communication import MQTTClient
+from hardware_interface.communication_protocol import RaceCar
 
 from evolution.evolution import CarEvolution
 from user_interface.constants import (
@@ -35,12 +38,13 @@ class GameScene(Scene):
     def __init__(
         self,
         shared_data: dict,
+        mqtt_client: MQTTClient,
         num_visualised_cars: int = 10,
         car_colours: Optional[List[Tuple[int, int, int]]] = None,
         show_instructions: bool = False,
     ):
         super().__init__(shared_data)
-
+        self.mqtt_client = mqtt_client
         self.num_visualised_cars = num_visualised_cars
         self.car_colours = car_colours
         self.show_instructions = show_instructions
@@ -532,8 +536,21 @@ class GameScene(Scene):
                 elif event.key == pygame.K_m:
                     self.show_mean = not self.show_mean
                 elif pygame.K_0 <= event.key <= pygame.K_9:
-                    # TODO link this with button presses
+                    self.mqtt_client.start_loop()
+                    # TODO: Add kill switch or param for max wait
                     car_index = event.key - pygame.K_0
+                    print(f"Start Index: {car_index}")
+                    start_time = time.time()
+                    while time.time() - start_time < 30:
+                        if not self.mqtt_client.queue_empty():
+                            topic, msg = self.mqtt_client.pop_queue()
+                            print("Topic:", topic, "\nMsg: ", msg)
+                            if RaceCar.topic in topic:
+                                race_car = RaceCar()
+                                race_car.deserialise(msg)
+                                car_index = race_car.id
+                                print(car_index)
+                                break
                     if car_index < len(self.cars):
                         self.cars[car_index].selected = not self.cars[
                             car_index
