@@ -25,8 +25,8 @@ def parse_args(cli_args: list[str]) -> argparse.Namespace:
     :type cli_args: list[str]
     :param cli_args: Command Line Arguments
     :return: Parsed arguments
-    """
     :rtype: argparse.Namespace
+    """
     parser = argparse.ArgumentParser(description="Run the Evolving Cars game.")
     parser.add_argument("--window_width", type=int, default=None, help="Window width in pixels (defaults to screen width)")
     parser.add_argument("--window_height", type=int, default=None, help="Window height in pixels (defaults to screen height)")
