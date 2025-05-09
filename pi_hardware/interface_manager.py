@@ -13,6 +13,7 @@ import json
 import os
 import time
 import sys
+import threading
 
 sys.path.append("..")
 
@@ -20,7 +21,7 @@ sys.path.append("..")
 import pandas as pd
 
 # Relative Imports
-from hardware_interface import MQTTClient, RaceCar, CarStatus
+from hardware_interface import MQTTClient, RaceCar, LedCtrl, LedMode
 from gpio_controller import GPIOController, LightButton
 
 
@@ -98,12 +99,32 @@ class InterfaceManager:
     def mqtt_loop(self):
         """Monitors the MQTT client for messages and deals with them appropriately"""
         self.mqtt_client.start_loop()
+        print("Listen Thread started")
+        self.mqtt_client.subscribe(LedCtrl.topic)
         while not self._kill:
             while not self.mqtt_client.queue_empty():
                 topic, msg = self.mqtt_client.pop_queue()
                 print(f"{topic}: {msg}")
+                if topic == LedCtrl.topic:
+                    led_msg = LedCtrl()
+                    led_msg.deserialise(msg)
+                    if led_msg.mode == LedMode.ALL_ON:
+                        self._all_on()
+                    else:
+                        self._all_off()
+
             time.sleep(0.05)
         self.mqtt_client.stop_loop()
+
+    def _all_on(self):
+        """Turns on all the LEDs"""
+        for button in self.buttons.values():
+            button.on()
+
+    def _all_off(self):#
+        """Turns off all the LEDs"""
+        for button in self.buttons.values():
+            button.off()
 
     def stop(self):
         """Stops manager"""
@@ -120,10 +141,16 @@ if __name__ == '__main__':
     mqtt_client.connect()
     manager = InterfaceManager(mqtt_client=mqtt_client,
                                pin_configuration="pins.json")
-    manager.hardware_loop()
+    listen_thread = threading.Thread(target=manager.mqtt_loop)
+    listen_thread.start()
+    hardware_thread = threading.Thread(target=manager.hardware_loop)
+    hardware_thread.start()
     while True:
         try:
             time.sleep(0.05)
         except KeyboardInterrupt:
             manager.stop()
+            listen_thread.join()
+            hardware_thread.join()
             mqtt_client.disconnect()
+

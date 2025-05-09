@@ -151,11 +151,20 @@ class LightButton:
     def toggle_light(self) -> bool:
         """Toggles the light on or off."""
         if self._light_state:
-            self._light_state = False
+            self.off()
         else:
-            self._light_state = True
-        self._gpio_controller.set_led(self.led_pin, self._light_state)
+            self.on()
         return self._light_state
+
+    def off(self):
+        """Turn the light off"""
+        self._light_state = False
+        self._gpio_controller.set_led(self.led_pin, self._light_state)
+
+    def on(self):
+        """Turn the light on"""
+        self._light_state = True
+        self._gpio_controller.set_led(self.led_pin, self._light_state)
 
     def check_trigger(self) -> bool:
         """Reads the state of the button trigger"""
@@ -165,7 +174,7 @@ class LightButton:
 # Example Usage
 if __name__ == "__main__":
     # Define GPIO pins for LEDs and Buttons
-    led_pins = [17, 27, 22]
+    led_pins = [17, 27, 22, 14, 15, 18, 10, 9, 11, 23, 24, 25]
     button_pins = [5, 6, 13]
 
     # Initialize GPIOController
