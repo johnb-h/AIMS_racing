@@ -7,7 +7,7 @@ import matplotlib
 import numpy as np
 import pygame
 from hardware_interface.mqtt_communication import MQTTClient
-from hardware_interface.communication_protocol import RaceCar
+from hardware_interface import RaceCar, LedCtrl, LedMode
 
 from evolution.evolution import CarEvolution
 from user_interface.constants import (
@@ -53,9 +53,17 @@ class GameScene(Scene):
                 range(self.num_visualised_cars)
             )
             self.car_colours = [
-                (int(r * 255), int(g * 255), int(b * 255))
-                for r, g, b, _ in self.car_colours
+                (255, 255, 255),  # White
+                (0, 0, 255),      # Blue
+                (255, 255, 0),    # Yellow
+                (0, 255, 0),      # Green
+                (255, 0, 0)       # Red
             ]
+            self.car_colours += self.car_colours
+            #self.car_colours = [
+            #    (int(r * 255), int(g * 255), int(b * 255))
+            #    for r, g, b, _ in self.car_colours
+            #]
         self.crashed_time = None
         self.countdown = True
         self.countdown_time = pygame.time.get_ticks()
@@ -568,6 +576,7 @@ class GameScene(Scene):
             if not self.finish_line_crossed:
                 self.cars_driving = False
         else:
+            self.mqtt_client.publish_message(message=LedCtrl(mode=LedMode.ALL_OFF).serialise(), topic=LedCtrl.topic)
             selected = [i for i, car in enumerate(self.cars) if car.selected]
             if selected:
                 self.evolution.tell(selected)
