@@ -536,21 +536,8 @@ class GameScene(Scene):
                 elif event.key == pygame.K_m:
                     self.show_mean = not self.show_mean
                 elif pygame.K_0 <= event.key <= pygame.K_9:
-                    self.mqtt_client.start_loop()
                     # TODO: Add kill switch or param for max wait
                     car_index = event.key - pygame.K_0
-                    print(f"Start Index: {car_index}")
-                    start_time = time.time()
-                    while time.time() - start_time < 30:
-                        if not self.mqtt_client.queue_empty():
-                            topic, msg = self.mqtt_client.pop_queue()
-                            print("Topic:", topic, "\nMsg: ", msg)
-                            if RaceCar.topic in topic:
-                                race_car = RaceCar()
-                                race_car.deserialise(msg)
-                                car_index = race_car.id
-                                print(car_index)
-                                break
                     if car_index < len(self.cars):
                         self.cars[car_index].selected = not self.cars[
                             car_index
