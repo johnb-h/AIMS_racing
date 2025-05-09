@@ -143,9 +143,14 @@ class RaceCar(RaceCommunicationProtocol):
         return self._id
 
     @id.setter
-    def id(self, value: int):
-        if isinstance(value, int):
-            self._id = value if value > 0 else -1
+    def id(self, value):
+        if isinstance(value, int) or isinstance(value, float):
+            self._id = value if value >= 0 else -1
+        elif isinstance(value, str):
+            try:
+                self._id = int(value)
+            except ValueError:
+                self._id = -1
         else:
             self._id = -1
 
