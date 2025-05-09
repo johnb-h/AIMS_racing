@@ -92,7 +92,7 @@ class InterfaceManager:
                     button.toggle_light()
                     msg = RaceCar(id=key)
                     self.mqtt_client.publish_message(RaceCar.topic, msg.serialise())
-                    time.sleep(0.3)
+                    time.sleep(0.1)
             time.sleep(0.05)
 
     def mqtt_loop(self):
@@ -116,7 +116,7 @@ if __name__ == '__main__':
     with open("../configs/mqtt_config.json", "r", encoding="utf-8") as f:
         mqtt_config = json.load(f)
         f.close()
-    mqtt_client = MQTTClient(mqtt_config=mqtt_config)
+    mqtt_client = MQTTClient(mqtt_config=mqtt_config, verbose=True)
     mqtt_client.connect()
     manager = InterfaceManager(mqtt_client=mqtt_client,
                                pin_configuration="pins.json")
