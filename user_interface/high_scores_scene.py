@@ -4,6 +4,7 @@ import json
 from typing import Optional
 from user_interface.scene import Scene
 from user_interface.states import State
+from hardware_interface.mqtt_communication import MQTTClient
 
 HIGH_SCORES_FILE = "high_scores.json"
 
@@ -19,7 +20,10 @@ def load_high_scores():
     return scores
 
 class HighScoresScene(Scene):
-    def __init__(self, shared_data: dict) -> None:
+    def __init__(
+        self, shared_data: dict,
+        mqtt_client: MQTTClient,
+    ) -> None:
         super().__init__(shared_data)
         # Load fonts.
         self.title_font = pygame.font.Font("./assets/joystix_monospace.ttf", 144)
@@ -71,9 +75,9 @@ class HighScoresScene(Scene):
 
     def handle_events(self, events) -> None:
         for ev in events:
-            if ev.type == pygame.KEYDOWN:
-                if ev.key == pygame.K_RETURN:
-                    self._next_state = State.MAIN_MENU
+            # Advance on any mouse click OR any key press
+            if ev.type == pygame.MOUSEBUTTONDOWN or ev.type == pygame.KEYDOWN:
+                self._next_state = State.MAIN_MENU
 
     def update(self, dt: float) -> Optional[State]:
         return self._next_state

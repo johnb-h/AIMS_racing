@@ -67,10 +67,7 @@ class ApplicationManager:
 
     def _get_scene(self, state: State):
         if state not in self._scenes:
-            if state == State.GAME:
-                self._scenes[state] = self._scene_map[state](self.shared_data, self.mqtt_client)
-            else:
-                self._scenes[state] = self._scene_map[state](self.shared_data)
+            self._scenes[state] = self._scene_map[state](self.shared_data, self.mqtt_client)
         return self._scenes[state]
 
     def run_game_loop(self) -> None:

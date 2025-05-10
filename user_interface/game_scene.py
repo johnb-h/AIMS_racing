@@ -8,6 +8,7 @@ import numpy as np
 import pygame
 from hardware_interface.mqtt_communication import MQTTClient
 from hardware_interface import RaceCar, LedCtrl, LedMode
+from user_interface.constants import RESOLUTION
 
 from evolution.evolution import CarEvolution
 from user_interface.constants import (
@@ -84,13 +85,11 @@ class GameScene(Scene):
         self.generate_new_population()
 
     def _init_display(self):
-        """Initialize display settings based on current window."""
-        info = pygame.display.Info()
-        self.width = info.current_w
-        self.height = info.current_h
-        # Calculate aspect ratio preserving track dimensions
+        """Initialize display settings based on the *virtual* 1920×1080 surface."""
+        self.width, self.height = RESOLUTION
+        # then compute track_scale off of those:
         self.track_scale = min(
-            self.width / (WINDOW_WIDTH_IN_M * 1.1),  # Add margins
+            self.width / (WINDOW_WIDTH_IN_M * 1.1),
             self.height / (WINDOW_HEIGHT_IN_M * 1.1),
         )
 

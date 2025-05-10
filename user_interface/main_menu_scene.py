@@ -3,10 +3,14 @@ from typing import Optional
 from user_interface.scene import Scene
 from user_interface.states import State
 from user_interface.constants import MENU_FPS
+from hardware_interface.mqtt_communication import MQTTClient
 
 class MainMenuScene(Scene):
     """Main menu scene that displays title, messages, and images."""
-    def __init__(self, shared_data: dict) -> None:
+    def __init__(
+        self, shared_data: dict,
+        mqtt_client: MQTTClient,
+    ) -> None:
         super().__init__(shared_data)
         self.title_font = pygame.font.Font("./assets/joystix_monospace.ttf", 144)
         self.body_font = pygame.font.Font("./assets/joystix_monospace.ttf", 72)
@@ -39,7 +43,8 @@ class MainMenuScene(Scene):
 
     def handle_events(self, events) -> None:
         for ev in events:
-            if ev.type == pygame.MOUSEBUTTONDOWN:
+            # Advance on any mouse click OR any key press
+            if ev.type == pygame.MOUSEBUTTONDOWN or ev.type == pygame.KEYDOWN:
                 self._next_state = State.INSTRUCTIONS
 
     def update(self, dt: float) -> Optional[State]:
