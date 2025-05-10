@@ -23,7 +23,7 @@ class CarEvolution:
         track_outer_height: float,
         track_inner_width: float,
         track_inner_height: float,
-        population_size: int = 100,
+        population_size: int = 1000,
         num_visualize: int = 10,
         n_steps: int = 1000,
         track_outer: List[Tuple[float, float]] = None,
@@ -46,7 +46,11 @@ class CarEvolution:
         self.track_inner = np.array(track_inner) if track_inner else None
 
         # Basis function setup
-        self.basis_functions = [(0.02, 40), (0.01, 100)]  # (width, count) pairs
+        self.basis_functions = [
+            (0.1, 1),
+            (0.02, 40),
+            (0.01, 100),
+        ]  # (width, count) pairs
         self.n_params = sum(count for _, count in self.basis_functions)
         self._setup_basis_functions()
 
