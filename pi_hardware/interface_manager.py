@@ -77,13 +77,19 @@ class InterfaceManager:
 
     def init_sequence(self):
         """Init light sequence"""
-        sleep_time: float = 0.5
+        sleep_time: float = 0.2
         while sleep_time > 0:
             for button in self.buttons.values():
                 button.toggle_light()
                 time.sleep(sleep_time)
                 button.toggle_light()
-            sleep_time -= 0.1
+            for i in range(3):
+                time.sleep(sleep_time)
+                self._all_on()
+                time.sleep(sleep_time)
+                self._all_off()
+
+            sleep_time -= 0.04
 
     def hardware_loop(self):
         """Loops through checking the buttons and toggle lights where needed"""
