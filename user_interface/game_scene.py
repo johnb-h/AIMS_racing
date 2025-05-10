@@ -76,6 +76,9 @@ class GameScene(Scene):
         self.track_background = pygame.image.load("assets/Background5_1920_1080.png").convert_alpha()
         self.background = pygame.image.load("assets/Background3_1920_1080.png").convert_alpha()
 
+        # Sounds
+        self._race_start_sound = pygame.mixer.Sound("assets/race_start.wav")
+
         self._init_display()
         self._init_track()
         self._init_evolution()
@@ -489,7 +492,7 @@ class GameScene(Scene):
         next_text = self.font.render("(space) next", True, (255, 255, 255))
         screen.blit(next_text, (20, self.height - 80))
 
-        # Countdown from 3 to GO
+        # Countdown from 5 to GO
         if self.countdown:
             countdown_text = self.font_go.render(self.countdown_text, True, (255, 255, 255))
             countdown_rect = countdown_text.get_rect(
@@ -500,6 +503,13 @@ class GameScene(Scene):
             if pygame.time.get_ticks() - self.countdown_time > 1000:
                 self.countdown_time = pygame.time.get_ticks()
                 if self.countdown_text == "":
+                    self._race_start_sound.play()
+                    self.mqtt_client.publish_message(topic=LedCtrl.topic,
+                                                     message=LedCtrl(mode=LedMode.RACE_START).serialise())
+                    self.countdown_text = "5"
+                elif self.countdown_text == "5":
+                    self.countdown_text = "4"
+                elif self.countdown_text == "4":
                     self.countdown_text = "3"
                 elif self.countdown_text == "3":
                     self.countdown_text = "2"

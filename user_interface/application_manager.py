@@ -30,6 +30,11 @@ class ApplicationManager:
         pygame.init()
         pygame.display.set_caption("Evolving Cars")
 
+        # Sound
+        self._general_race_noise = pygame.mixer.Sound("./assets/general_race_noise.wav")
+        self._cheer = pygame.mixer.Sound("./assets/cheers.wav")
+        self._general_race_noise.play()
+
         if window_width is None or window_height is None:
             screen_info = pygame.display.Info()
             window_width = window_width or screen_info.current_w
@@ -68,9 +73,15 @@ class ApplicationManager:
     def _get_scene(self, state: State):
         if state not in self._scenes:
             if state == State.GAME:
+                self._general_race_noise.stop()
                 self._scenes[state] = self._scene_map[state](self.shared_data, self.mqtt_client)
+                return self._scenes[state]
+            elif state == state.NAME_ENTRY or state == state.HIGH_SCORES:
+                self._cheer.play()
+                self._cheer.fadeout(5)
             else:
-                self._scenes[state] = self._scene_map[state](self.shared_data)
+                self._general_race_noise.play()
+            self._scenes[state] = self._scene_map[state](self.shared_data)
         return self._scenes[state]
 
     def run_game_loop(self) -> None:
