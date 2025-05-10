@@ -106,6 +106,7 @@ from enum import Enum
 class LedMode(Enum):
     ALL_OFF = 0
     ALL_ON = 1
+    INIT = 2
     DEFAULT = 0
 
 class LedCtrl(RaceCommunicationProtocol):

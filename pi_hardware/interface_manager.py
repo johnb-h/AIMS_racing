@@ -59,7 +59,7 @@ class InterfaceManager:
             led_pin, trig_pin = pin_setup['BUTTONS'].get(key)
             self.buttons.update({key: LightButton(led_pin=led_pin, trigger_pin=trig_pin,
                                                   gpio_controller=self._gpio_controller)})
-        self.init_sequence()
+        self._init_sequence()
         self.mqtt_client = mqtt_client
         self._kill = False
 
@@ -75,9 +75,9 @@ class InterfaceManager:
         df = pd.DataFrame(pin_setup["BUTTONS"])
         return df.iloc[0].tolist(), df.iloc[1].tolist()
 
-    def init_sequence(self):
+    def _init_sequence(self):
         """Init light sequence"""
-        sleep_time: float = 0.2
+        sleep_time: float = 0.12
         while sleep_time > 0:
             for button in self.buttons.values():
                 button.toggle_light()
@@ -116,6 +116,8 @@ class InterfaceManager:
                     led_msg.deserialise(msg)
                     if led_msg.mode == LedMode.ALL_ON:
                         self._all_on()
+                    elif led_msg.mode == LedMode.INIT:
+                        self._init_sequence()
                     else:
                         self._all_off()
 
@@ -147,6 +149,7 @@ if __name__ == '__main__':
     mqtt_client.connect()
     manager = InterfaceManager(mqtt_client=mqtt_client,
                                pin_configuration="pins.json")
+    time.sleep(0.5)
     listen_thread = threading.Thread(target=manager.mqtt_loop)
     listen_thread.start()
     hardware_thread = threading.Thread(target=manager.hardware_loop)

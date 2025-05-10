@@ -559,6 +559,8 @@ class GameScene(Scene):
         self._init_visualization_cache()
         self.generation = 1
         self.generate_new_population()
+        self.mqtt_client.publish_message(message=LedCtrl(mode=LedMode.INIT).serialise(), topic=LedCtrl.topic)
+        time.sleep(2)
 
     def _handle_space_key(self):
         if self.countdown:
