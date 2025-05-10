@@ -1,10 +1,13 @@
 import math
+import time
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 import matplotlib
 import numpy as np
 import pygame
+from hardware_interface.mqtt_communication import MQTTClient
+from hardware_interface import RaceCar, LedCtrl, LedMode
 
 from evolution.evolution import CarEvolution
 from user_interface.constants import (
@@ -35,12 +38,13 @@ class GameScene(Scene):
     def __init__(
         self,
         shared_data: dict,
+        mqtt_client: MQTTClient,
         num_visualised_cars: int = 10,
         car_colours: Optional[List[Tuple[int, int, int]]] = None,
         show_instructions: bool = False,
     ):
         super().__init__(shared_data)
-
+        self.mqtt_client = mqtt_client
         self.num_visualised_cars = num_visualised_cars
         self.car_colours = car_colours
         self.show_instructions = show_instructions
@@ -49,9 +53,17 @@ class GameScene(Scene):
                 range(self.num_visualised_cars)
             )
             self.car_colours = [
-                (int(r * 255), int(g * 255), int(b * 255))
-                for r, g, b, _ in self.car_colours
+                (255, 255, 255),  # White
+                (0, 0, 255),      # Blue
+                (255, 255, 0),    # Yellow
+                (0, 255, 0),      # Green
+                (255, 0, 0)       # Red
             ]
+            self.car_colours += self.car_colours
+            #self.car_colours = [
+            #    (int(r * 255), int(g * 255), int(b * 255))
+            #    for r, g, b, _ in self.car_colours
+            #]
         self.crashed_time = None
         self.countdown = True
         self.countdown_time = pygame.time.get_ticks()
@@ -532,7 +544,7 @@ class GameScene(Scene):
                 elif event.key == pygame.K_m:
                     self.show_mean = not self.show_mean
                 elif pygame.K_0 <= event.key <= pygame.K_9:
-                    # TODO link this with button presses
+                    # TODO: Add kill switch or param for max wait
                     car_index = event.key - pygame.K_0
                     if car_index < len(self.cars):
                         self.cars[car_index].selected = not self.cars[
@@ -547,6 +559,8 @@ class GameScene(Scene):
         self._init_visualization_cache()
         self.generation = 1
         self.generate_new_population()
+        self.mqtt_client.publish_message(message=LedCtrl(mode=LedMode.INIT).serialise(), topic=LedCtrl.topic)
+        time.sleep(2)
 
     def _handle_space_key(self):
         if self.countdown:
@@ -564,6 +578,7 @@ class GameScene(Scene):
             if not self.finish_line_crossed:
                 self.cars_driving = False
         else:
+            self.mqtt_client.publish_message(message=LedCtrl(mode=LedMode.ALL_OFF).serialise(), topic=LedCtrl.topic)
             selected = [i for i, car in enumerate(self.cars) if car.selected]
             if selected:
                 self.evolution.tell(selected)

@@ -1,4 +1,5 @@
 import pygame
+import json
 from typing import Optional
 from user_interface.constants import TARGET_FPS, MENU_FPS
 from user_interface.game_scene import GameScene
@@ -8,6 +9,8 @@ from user_interface.main_menu_scene import MainMenuScene
 from user_interface.name_entry_scene import NameEntryScene
 from user_interface.high_scores_scene import HighScoresScene
 from user_interface.states import State
+from hardware_interface.mqtt_communication import MQTTClient
+from hardware_interface.communication_protocol import RaceCar
 
 class ApplicationManager:
     """
@@ -15,6 +18,13 @@ class ApplicationManager:
     scales it to the window, and uses lazy scene loading for faster startup.
     """
     def __init__(self, window_width: Optional[int] = None, window_height: Optional[int] = None) -> None:
+        # Initialize MQTT Instance
+        with open("configs/mqtt_config.json", "r", encoding="utf-8") as f:
+            mqtt_config = json.load(f)
+            f.close()
+        self.mqtt_client = MQTTClient(mqtt_config=mqtt_config)
+        self.mqtt_client.connect()
+
         self._base_resolution = (1920, 1080)
 
         pygame.init()
@@ -57,14 +67,32 @@ class ApplicationManager:
 
     def _get_scene(self, state: State):
         if state not in self._scenes:
-            self._scenes[state] = self._scene_map[state](self.shared_data)
+            if state == State.GAME:
+                self._scenes[state] = self._scene_map[state](self.shared_data, self.mqtt_client)
+            else:
+                self._scenes[state] = self._scene_map[state](self.shared_data)
         return self._scenes[state]
 
     def run_game_loop(self) -> None:
         clock = pygame.time.Clock()
         running = True
-
+        self.mqtt_client.connect()
+        self.mqtt_client.start_loop()
+        self.mqtt_client.subscribe(RaceCar.topic)
         while running:
+            # MQTT Handle
+            if not self.mqtt_client.queue_empty():
+                topic, msg = self.mqtt_client.pop_queue()
+                if RaceCar.topic in topic:
+                    race_car = RaceCar()
+                    race_car.deserialise(msg)
+                    car_index = race_car.id
+                    if self._state == State.GAME:
+                        if car_index < len(self._scene.cars):
+                            self._scene.cars[car_index].selected = not self._scene.cars[
+                                car_index
+                            ].selected
+
             # Use MENU_FPS for menu scenes; else TARGET_FPS.
             current_fps = MENU_FPS if self._state in (State.MAIN_MENU, State.INSTRUCTIONS) else TARGET_FPS
             dt = clock.tick(current_fps) / 1000.0

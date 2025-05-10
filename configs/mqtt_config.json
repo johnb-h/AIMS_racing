@@ -1,0 +1,7 @@
+{
+  "broker": "10.200.56.26",
+  "port": 1883,
+  "username": "",
+  "password": "",
+  "keepalive": 0
+}
