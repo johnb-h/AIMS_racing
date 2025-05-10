@@ -107,6 +107,7 @@ class LedMode(Enum):
     ALL_OFF = 0
     ALL_ON = 1
     INIT = 2
+    RACE_START = 3
     DEFAULT = 0
 
 class LedCtrl(RaceCommunicationProtocol):

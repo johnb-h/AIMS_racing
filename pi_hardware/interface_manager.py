@@ -118,6 +118,8 @@ class InterfaceManager:
                         self._all_on()
                     elif led_msg.mode == LedMode.INIT:
                         self._init_sequence()
+                    elif led_msg.mode == LedMode.RACE_START:
+                        self._race_start()
                     else:
                         self._all_off()
 
@@ -133,6 +135,30 @@ class InterfaceManager:
         """Turns off all the LEDs"""
         for button in self.buttons.values():
             button.off()
+
+    def _race_start(self):
+        """Start of race light sequence"""
+        row_len: int = len(self.buttons)
+        row_end = row_len // 2
+        # Countdown
+        for i in range(row_end):
+            self.buttons[str(i)].on()
+            time.sleep(1)
+        for i in range(row_end, row_len):
+            self.buttons[str(i)].on()
+        time.sleep(1)
+
+        # Row flashes
+        for _ in range(10):
+            for i in range(row_end):
+                self.buttons[str(i)].toggle_light()
+            time.sleep(0.04)
+            for i in range(row_end, row_len):
+                self.buttons[str(i)].toggle_light()
+            time.sleep(0.4)
+
+        time.sleep(5)
+        self._all_off()
 
     def stop(self):
         """Stops manager"""
