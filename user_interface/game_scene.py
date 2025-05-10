@@ -1,23 +1,30 @@
 import math
 import time
 from dataclasses import dataclass
+import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor, Future
 from typing import List, Optional, Tuple
 
 import matplotlib
 import numpy as np
 import pygame
+import pygame.freetype
+pygame.freetype.init()
 from hardware_interface.mqtt_communication import MQTTClient
 from hardware_interface import RaceCar, LedCtrl, LedMode
 from user_interface.constants import RESOLUTION
+from user_interface.sound_player import SoundPlayer
 
 from evolution.evolution import CarEvolution
 from user_interface.constants import (
     CAR_LENGTH,
     CAR_WIDTH,
-    TARGET_FPS,
+    GAME_RENDER_FPS,
+    SIMULATION_FPS,
     WINDOW_HEIGHT_IN_M,
     WINDOW_WIDTH_IN_M,
-    SPRITE_SCALE_MULTIPLIER
+    SPRITE_SCALE_MULTIPLIER,
+    GAME_START_WAIT_TIME,
 )
 from user_interface.scene import Scene
 from user_interface.states import State
@@ -40,12 +47,17 @@ class GameScene(Scene):
         self,
         shared_data: dict,
         mqtt_client: MQTTClient,
+        sound_player: SoundPlayer,
         num_visualised_cars: int = 10,
         car_colours: Optional[List[Tuple[int, int, int]]] = None,
         show_instructions: bool = False,
+        executor: concurrent.futures.ThreadPoolExecutor | None = None
     ):
-        super().__init__(shared_data)
-        self.mqtt_client = mqtt_client
+        super().__init__(shared_data, mqtt_client, sound_player)
+        self._executor = executor
+        self._load_future: Optional[Future] = None
+        self._sim_time_acc = 0.0
+        self._sim_step_acc = 0.0
         self.num_visualised_cars = num_visualised_cars
         self.car_colours = car_colours
         self.show_instructions = show_instructions
@@ -61,24 +73,21 @@ class GameScene(Scene):
                 (255, 0, 0)       # Red
             ]
             self.car_colours += self.car_colours
-            #self.car_colours = [
-            #    (int(r * 255), int(g * 255), int(b * 255))
-            #    for r, g, b, _ in self.car_colours
-            #]
+
         self.crashed_time = None
-        self.countdown = True
+        self.waiting_for_start = True
+        self.start_wait_time = pygame.time.get_ticks()
+        self.countdown = False
         self.countdown_time = pygame.time.get_ticks()
         self.countdown_text = ""
-        self.font = pygame.font.Font("./assets/joystix_monospace.ttf", 36)
-        self.font_go = pygame.font.Font("./assets/joystix_monospace.ttf", 72)
+        self.font    = pygame.font.Font("./assets/joystix_monospace.ttf", 36)
+        self.font_ft  = pygame.freetype.Font("./assets/joystix_monospace.ttf", 36)
+        self.font_go_ft = pygame.freetype.Font("./assets/joystix_monospace.ttf", 100)
 
         # Load the F1 car sprite
         self.f1_car_sprite = pygame.image.load("assets/cleaned_f1.tiff").convert_alpha()
         self.track_background = pygame.image.load("assets/Background5_1920_1080.png").convert_alpha()
         self.background = pygame.image.load("assets/Background3_1920_1080.png").convert_alpha()
-
-        # Sounds
-        self._race_start_sound = pygame.mixer.Sound("assets/race_start.wav")
 
         self._init_display()
         self._init_track()
@@ -402,7 +411,10 @@ class GameScene(Scene):
                         )
                         angle = np.arctan2(dy, dx)
 
-                        scaled_car = pygame.transform.scale_by(self.f1_car_sprite, self.track_scale * SPRITE_SCALE_MULTIPLIER)
+                        scaled_car = pygame.transform.scale_by(
+                            self.f1_car_sprite, 
+                            self.track_scale * SPRITE_SCALE_MULTIPLIER
+                        )
 
                         # Create a colored version of the car
                         colored_car = scaled_car.copy()
@@ -461,7 +473,7 @@ class GameScene(Scene):
         else:
             elapsed_time = self.current_step
 
-        elapsed_time = elapsed_time / TARGET_FPS
+        elapsed_time = elapsed_time / GAME_RENDER_FPS
         timer_text = self.font.render(f"Time: {elapsed_time:.2f}s", True, (255, 255, 255))
         timer_rect = timer_text.get_rect(topright=(self.width - 20, 20))
         screen.blit(timer_text, timer_rect)
@@ -474,10 +486,6 @@ class GameScene(Scene):
             else "Which cars performed best?"
             # Press SPACE for next generation"
         )
-
-        # Draw mean trajectory toggle instruction
-        # mean_text = self.font.render("(m) show population mean", True, (255, 255, 255))
-        # screen.blit(mean_text, (10, self.height - 80))
 
         # Draw restart instruction
         restart_text = self.font.render("(r) restart", True, (255, 255, 255))
@@ -493,38 +501,36 @@ class GameScene(Scene):
 
         # Countdown from 5 to GO
         if self.countdown:
-            countdown_text = self.font_go.render(self.countdown_text, True, (255, 255, 255))
-            countdown_rect = countdown_text.get_rect(
-                center=(self.width // 2, self.height // 2)
-            )
-            screen.blit(countdown_text, countdown_rect)
+            if self.countdown:
+                txt = self.countdown_text
+                _, rect = self.font_go_ft.render(txt, (255,255,255), size=72)
+                center = (self.width//2 - rect.width//2, self.height//2 - rect.height//2)
+                self._draw_text_with_outline(screen, self.font_go_ft, txt, center, size=72)
             pygame.display.flip()
             if pygame.time.get_ticks() - self.countdown_time > 1000:
                 self.countdown_time = pygame.time.get_ticks()
                 if self.countdown_text == "":
-                    self._race_start_sound.play()
-                    self.mqtt_client.publish_message(topic=LedCtrl.topic,
+                    self._mqtt_client.publish_message(topic=LedCtrl.topic,
                                                      message=LedCtrl(mode=LedMode.RACE_START).serialise())
-                    self.countdown_text = "5"
-                elif self.countdown_text == "5":
-                    self.countdown_text = "4"
-                elif self.countdown_text == "4":
+                    self._sound_player.play_race_beep_1()
                     self.countdown_text = "3"
                 elif self.countdown_text == "3":
+                    self._sound_player.play_race_beep_1()
                     self.countdown_text = "2"
                 elif self.countdown_text == "2":
+                    self._sound_player.play_race_beep_1()
                     self.countdown_text = "1"
                 elif self.countdown_text == "1":
+                    self._sound_player.play_race_beep_2()
                     self.countdown_text = "GO!"
                 elif self.countdown_text == "GO!":
                     self.countdown = False
         else:
-            # Place instructions in the middle of the screen
-            instructions_text = self.font.render(instructions, True, (255, 255, 255))
-            instructions_rect = instructions_text.get_rect(
-                center=(self.width // 2, self.height // 2)
-            )
-            screen.blit(instructions_text, instructions_rect)
+            # draw the “Press SPACE…” line with the same tiny outline
+            txt = instructions
+            _, rect = self.font_ft.render(txt, (255,255,255), size=36)
+            center = (self.width//2 - rect.width//2, self.height//2 - rect.height//2)
+            self._draw_text_with_outline(screen, self.font_ft, txt, center, size=36)
 
     def handle_events(self, events):
         for event in events:
@@ -548,7 +554,12 @@ class GameScene(Scene):
                 elif event.key == pygame.K_SPACE:
                     if self.finish_line_crossed:
                         self._next_state = State.NAME_ENTRY
-                        self.shared_data["score"] = self.finish_time
+                        score = 0 if self.finish_time is None else self.finish_time
+                        score /= GAME_RENDER_FPS
+                        self.shared_data["score"] = score
+                        self._sound_player.stop_game_background_music()
+                        self._mqtt_client.publish_message(message=LedCtrl(mode=LedMode.INIT).serialise(), topic=LedCtrl.topic)
+                        time.sleep(2)
                     self._handle_space_key()
                 elif event.key == pygame.K_m:
                     self.show_mean = not self.show_mean
@@ -559,17 +570,6 @@ class GameScene(Scene):
                         self.cars[car_index].selected = not self.cars[
                             car_index
                         ].selected
-                elif event.key == pygame.K_r:
-                    self.restart()
-
-    def restart(self):
-        self._init_state()
-        self._init_evolution()
-        self._init_visualization_cache()
-        self.generation = 1
-        self.generate_new_population()
-        self.mqtt_client.publish_message(message=LedCtrl(mode=LedMode.INIT).serialise(), topic=LedCtrl.topic)
-        time.sleep(2)
 
     def _handle_space_key(self):
         if self.countdown:
@@ -587,40 +587,79 @@ class GameScene(Scene):
             if not self.finish_line_crossed:
                 self.cars_driving = False
         else:
-            self.mqtt_client.publish_message(message=LedCtrl(mode=LedMode.ALL_OFF).serialise(), topic=LedCtrl.topic)
+            self._mqtt_client.publish_message(message=LedCtrl(mode=LedMode.ALL_OFF).serialise(), topic=LedCtrl.topic)
             selected = [i for i, car in enumerate(self.cars) if car.selected]
             if selected:
                 self.evolution.tell(selected)
                 self.generation += 1
                 self.generate_new_population()
 
+    def handle_mqtt(self) -> None:
+        """Handle incoming MQTT messages."""
+        if not self._mqtt_client.queue_empty():
+            topic, msg = self._mqtt_client.pop_queue()
+            if RaceCar.topic in topic:
+                race_car = RaceCar()
+                race_car.deserialise(msg)
+                car_index = race_car.id
+                if car_index < len(self.cars):
+                    self.cars[car_index].selected = not self.cars[
+                        car_index
+                    ].selected
+
     def update(self, dt):
+        # 1) Pre-countdown wait
+        if self.waiting_for_start:
+            now = pygame.time.get_ticks()
+            if now - self.start_wait_time >= GAME_START_WAIT_TIME * 1000:
+                # begin countdown
+                self.waiting_for_start = False
+                self.countdown = True
+                self.countdown_time = now
+                self.countdown_text = ""
+            else:
+                return self._next_state
+
+        # 2) If countdown is running, skip simulation stepping
         if self.countdown:
-            return
-        self.current_step += 1
-        if self._next_state is not None:
-            self.countdown = True
-            self.countdown_text = ""
-            self.countdown_time = pygame.time.get_ticks()
-        return self._next_state
+            return self._next_state
+
+        # 3) Normal simulation stepping
+        self._sim_step_acc += dt * SIMULATION_FPS
+        steps = int(self._sim_step_acc)
+        self._sim_step_acc -= steps
+        if steps:
+            self.current_step += steps
+            self._check_for_finish(self.current_step)
 
     def draw(self, screen):
-        background = self.background
-        screen.blit(background, (0, 0))
+        # draw background & track
+        screen.blit(self.background, (0, 0))
         screen.blit(self.track_surface, (0, 0))
 
+        # optional mean trajectory
         if self.show_mean:
             self._update_mean_trajectory()
             if self.mean_trajectory_surface:
                 screen.blit(self.mean_trajectory_surface, (0, 0))
 
-        if not self.countdown:
+        # draw cars only after wait & countdown are done
+        if not self.countdown and not self.waiting_for_start:
             self._draw_cars(screen)
-        self._draw_ui(screen)
+
+        # draw UI (countdown & instructions) only after the initial wait
+        if not self.waiting_for_start:
+            self._draw_ui(screen)
 
     def reset(self):
         self._next_state = None
-        self.generate_new_population()
+        self._init_state()
+        self._init_evolution()
+        self._init_visualization_cache()
+        self.generation = 1
+        # self._sound_player.play_game_background_music()
+        if self._executor is not None:
+            self._load_future = self._executor.submit(self.generate_new_population)
 
     def _init_state(self):
         """Initialize state variables."""
@@ -638,3 +677,30 @@ class GameScene(Scene):
         self.mean_trajectory_surface = None
         self.last_generation = -1
         self.track_surface = self._create_track_surface()
+
+    def _draw_text_with_outline(
+        self,
+        surf: pygame.Surface,
+        font: pygame.freetype.Font,
+        text: str,
+        pos: tuple[int,int],
+        fg: tuple[int,int,int]=(255,255,255),
+        outline_color: tuple[int,int,int]=(0,0,0),
+        outline_width: int=2,
+        size: int=0,
+    ) -> None:
+        # render both fg and outline versions
+        text_surf, _    = font.render(text, fg, size=size)          # :contentReference[oaicite:0]{index=0}
+        outline_surf, _ = font.render(text, outline_color, size=size)
+        w, h = text_surf.get_size()
+        # build a tiny Surface that can hold the outline + text
+        o_surf = pygame.Surface((w + 2*outline_width, h + 2*outline_width), pygame.SRCALPHA)
+        # blit outline eight times around
+        for dx in (-outline_width, 0, outline_width):
+            for dy in (-outline_width, 0, outline_width):
+                if dx==0 and dy==0: continue
+                o_surf.blit(outline_surf, (dx + outline_width, dy + outline_width))
+        # blit the white text on top
+        o_surf.blit(text_surf, (outline_width, outline_width))
+        # finally, blit to your target surface, offset so it's centered at pos
+        surf.blit(o_surf, (pos[0] - outline_width, pos[1] - outline_width))

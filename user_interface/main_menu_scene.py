@@ -3,6 +3,7 @@ from typing import Optional
 from user_interface.scene import Scene
 from user_interface.states import State
 from user_interface.constants import MENU_FPS
+from user_interface.sound_player import SoundPlayer
 from hardware_interface.mqtt_communication import MQTTClient
 
 class MainMenuScene(Scene):
@@ -10,8 +11,9 @@ class MainMenuScene(Scene):
     def __init__(
         self, shared_data: dict,
         mqtt_client: MQTTClient,
+        sound_player: SoundPlayer,
     ) -> None:
-        super().__init__(shared_data)
+        super().__init__(shared_data, mqtt_client, sound_player)
         self.title_font = pygame.font.Font("./assets/joystix_monospace.ttf", 144)
         self.body_font = pygame.font.Font("./assets/joystix_monospace.ttf", 72)
         self.start_font = pygame.font.Font("./assets/joystix_monospace.ttf", 36)
@@ -45,7 +47,17 @@ class MainMenuScene(Scene):
         for ev in events:
             # Advance on any mouse click OR any key press
             if ev.type == pygame.MOUSEBUTTONDOWN or ev.type == pygame.KEYDOWN:
-                self._next_state = State.INSTRUCTIONS
+                self.set_next_state()
+
+    def handle_mqtt(self) -> None:
+        """Handle incoming MQTT messages."""
+        if not self._mqtt_client.queue_empty():
+            topic, msg = self._mqtt_client.pop_queue()
+            self.set_next_state()
+
+    def set_next_state(self) -> Optional[State]:
+        self._sound_player.play_menu_click()
+        self._next_state = State.INSTRUCTIONS
 
     def update(self, dt: float) -> Optional[State]:
         self._update_accumulator += dt
@@ -62,6 +74,7 @@ class MainMenuScene(Scene):
 
         return self._next_state
 
+
     def draw(self, screen: pygame.Surface) -> None:
         screen.blit(self.background, (0, 0))
         title_shadow_x = (1920 - self.title_shadow_surface.get_width()) // 2 + 10
@@ -76,13 +89,16 @@ class MainMenuScene(Scene):
         screen.blit(self.body2_surface, (body2_x, 500))
 
         screen.blit(self.cup, (50, 1080 - self.cup.get_height() - 50))
-        screen.blit(self.car, (1920 - self.car.get_width() - 50, 1080 - self.car.get_height() - 50))
+        # screen.blit(self.car, (1920 - self.car.get_width() - 50, 1080 - self.car.get_height() - 50))
+        screen.blit(self.car, (1920 - self.car.get_width() - 50, 1080 - self.car.get_height() + 80))
         flag_x = (1920 - self.flag.get_width()) // 2
         screen.blit(self.flag, (flag_x, 1080 - self.flag.get_height() - 50))
 
-        blink_surface = self.body3_surface if self._blink_visible else self.off_body3_surface
-        blink_rect = blink_surface.get_rect(center=(1920 // 2, 1080 - 100))
-        screen.blit(blink_surface, blink_rect)
+        # only draw blink-text if we’re not in transition
+        if not getattr(self, "_hide_blink", False):
+            blink_surface = self.body3_surface if self._blink_visible else self.off_body3_surface
+            blink_rect    = blink_surface.get_rect(center=(1920 // 2, 1080 - 100))
+            screen.blit(blink_surface, blink_rect)
 
     def reset(self) -> None:
         self._next_state = None

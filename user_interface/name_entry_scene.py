@@ -4,6 +4,8 @@ import json
 from typing import Optional
 from user_interface.scene import Scene
 from user_interface.states import State
+from hardware_interface.mqtt_communication import MQTTClient
+from user_interface.sound_player import SoundPlayer
 
 HIGH_SCORES_FILE = "high_scores.json"
 
@@ -19,8 +21,12 @@ def load_high_scores():
     return scores
 
 class NameEntryScene(Scene):
-    def __init__(self, shared_data: dict) -> None:
-        super().__init__(shared_data)
+    def __init__(
+        self, shared_data: dict,
+        mqtt_client: MQTTClient,
+        sound_player: SoundPlayer,
+    ) -> None:
+        super().__init__(shared_data, mqtt_client, sound_player)
         # Load fonts.
         self.title_font = pygame.font.Font("./assets/joystix_monospace.ttf", 110)
         self.body_font = pygame.font.Font("./assets/joystix_monospace.ttf", 72)
@@ -37,7 +43,7 @@ class NameEntryScene(Scene):
         self.ranking = sum(1 for entry in self.high_scores if entry["score"] < self.score) + 1
 
         # Pre-render score and ranking texts.
-        score_text = f"YOUR SCORE: {self.score:.2f}"
+        score_text = f"YOUR TIME: {self.score:.2f}s"
         rank_text = f"YOUR RANK: {self.ranking}"
         self.score_surface = self.title_font.render(score_text, True, (0, 0, 0))
         self.rank_surface = self.body_font.render(rank_text, True, (0, 0, 0))
@@ -62,11 +68,22 @@ class NameEntryScene(Scene):
                             json.dump(self.high_scores, f, indent=4)
                         # Also store the recent entry to shared_data for the high scores screen.
                         self.shared_data["recent_entry"] = new_entry
-                    self._next_state = State.HIGH_SCORES
+                    self.set_next_state()
                 elif ev.key == pygame.K_BACKSPACE:
                     self.player_name = self.player_name[:-1]
                 else:
                     self.player_name += ev.unicode
+
+
+    def handle_mqtt(self) -> None:
+        """Handle incoming MQTT messages."""
+        if not self._mqtt_client.queue_empty():
+            topic, msg = self._mqtt_client.pop_queue()
+            self.set_next_state()
+
+    def set_next_state(self) -> Optional[State]:
+        self._sound_player.play_menu_click()
+        self._next_state = State.HIGH_SCORES
 
     def update(self, dt: float) -> Optional[State]:
         # No blinking timers; simply return the next state when set.

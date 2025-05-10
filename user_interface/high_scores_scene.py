@@ -5,6 +5,7 @@ from typing import Optional
 from user_interface.scene import Scene
 from user_interface.states import State
 from hardware_interface.mqtt_communication import MQTTClient
+from user_interface.sound_player import SoundPlayer
 
 HIGH_SCORES_FILE = "high_scores.json"
 
@@ -23,8 +24,9 @@ class HighScoresScene(Scene):
     def __init__(
         self, shared_data: dict,
         mqtt_client: MQTTClient,
+        sound_player: SoundPlayer,
     ) -> None:
-        super().__init__(shared_data)
+        super().__init__(shared_data, mqtt_client, sound_player)
         # Load fonts.
         self.title_font = pygame.font.Font("./assets/joystix_monospace.ttf", 144)
         self.body_font = pygame.font.Font("./assets/joystix_monospace.ttf", 72)
@@ -45,6 +47,7 @@ class HighScoresScene(Scene):
         self.scores_surfaces = []
         self.update_scores_surfaces()
         self._next_state = None
+        self._mqtt_client = mqtt_client
 
     def update_scores_surfaces(self):
         self.high_scores = load_high_scores()
@@ -77,7 +80,17 @@ class HighScoresScene(Scene):
         for ev in events:
             # Advance on any mouse click OR any key press
             if ev.type == pygame.MOUSEBUTTONDOWN or ev.type == pygame.KEYDOWN:
-                self._next_state = State.MAIN_MENU
+                self.set_next_state()
+
+    def handle_mqtt(self) -> None:
+        """Handle incoming MQTT messages."""
+        if not self._mqtt_client.queue_empty():
+            topic, msg = self._mqtt_client.pop_queue()
+            self.set_next_state()
+
+    def set_next_state(self) -> Optional[State]:
+        self._sound_player.play_menu_click()
+        self._next_state = State.MAIN_MENU
 
     def update(self, dt: float) -> Optional[State]:
         return self._next_state
