@@ -97,6 +97,13 @@ class GameScene(Scene):
             for i, _ in enumerate(self.car_colours)
         }
 
+        self.track_background = pygame.image.load(
+            "assets/Background5_1920_1080.png"
+        ).convert_alpha()
+        self.background = pygame.image.load(
+            "assets/Background3_1920_1080.png"
+        ).convert_alpha()
+
         # Build everything
         self._init_display()
         self._init_track()
