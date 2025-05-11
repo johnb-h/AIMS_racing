@@ -83,9 +83,19 @@ class GameScene(Scene):
         self.font_go_ft = pygame.freetype.Font("./assets/joystix_monospace.ttf", 100)
 
         # Load sprites & backgrounds
-        self.f1_car_sprite   = pygame.image.load("assets/cleaned_f1.tiff").convert_alpha()
-        self.track_background = pygame.image.load("assets/Background5_1920_1080.png").convert_alpha()
-        self.background       = pygame.image.load("assets/Background3_1920_1080.png").convert_alpha()
+        # Load the F1 car sprite
+        self.f1_car_sprite = pygame.image.load("assets/cleaned_f1.tiff").convert_alpha()
+        self.f1_car_bar_sprite = pygame.image.load(
+            "assets/cleaned_f1_bar.tiff"
+        ).convert_alpha()
+        self.index_to_sprite = {
+            i: (
+                self.f1_car_sprite
+                if i >= len(self.car_colours) // 2
+                else self.f1_car_bar_sprite
+            )
+            for i, _ in enumerate(self.car_colours)
+        }
 
         # Build everything
         self._init_display()
@@ -383,6 +393,9 @@ class GameScene(Scene):
 
         # Then draw cars and handle crashes
         for i, car in enumerate(self.cars):
+
+            car_sprite = self.index_to_sprite[i]
+
             if len(car.positions) <= 1:
                 continue
 
@@ -430,8 +443,8 @@ class GameScene(Scene):
                         angle = np.arctan2(dy, dx)
 
                         scaled_car = pygame.transform.scale_by(
-                            self.f1_car_sprite, 
-                            self.track_scale * SPRITE_SCALE_MULTIPLIER
+                            car_sprite,
+                            self.track_scale * SPRITE_SCALE_MULTIPLIER,
                         )
 
                         # Create a colored version of the car
