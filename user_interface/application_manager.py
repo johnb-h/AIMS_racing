@@ -8,6 +8,7 @@ from user_interface.instructions_scene import InstructionsScene
 from user_interface.main_menu_scene import MainMenuScene
 from user_interface.name_entry_scene import NameEntryScene
 from user_interface.high_scores_scene import HighScoresScene
+from user_interface.dummy_game_scene import DummyGameScene
 from user_interface.states import State
 from user_interface.sound_player import SoundPlayer
 from hardware_interface.mqtt_communication import MQTTClient
@@ -69,6 +70,7 @@ class ApplicationManager:
             State.MAIN_MENU:  MainMenuScene(self.shared_data, self.mqtt_client, self._sound_player),
             State.INSTRUCTIONS: InstructionsScene(self.shared_data, self.mqtt_client, self._sound_player),
             State.GAME: GameScene(self.shared_data, self.mqtt_client, self._sound_player, executor=self._executor),
+            # State.GAME: DummyGameScene(self.shared_data, self.mqtt_client, self._sound_player),
             State.NAME_ENTRY: NameEntryScene(self.shared_data, self.mqtt_client, self._sound_player),
             State.HIGH_SCORES: HighScoresScene(self.shared_data, self.mqtt_client, self._sound_player),
         }

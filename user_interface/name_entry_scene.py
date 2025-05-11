@@ -34,21 +34,13 @@ class NameEntryScene(Scene):
 
         # Load shared background.
         self.background = pygame.image.load("assets/Background1_1920_1080.png").convert()
-        
-        # Get the score from shared data.
-        self.score = self.shared_data.get("score", 0.0)
-        # Load previously saved scores.
-        self.high_scores = load_high_scores()
-        # Compute ranking: number of scores strictly better (i.e. with lower value) plus one.
-        self.ranking = sum(1 for entry in self.high_scores if entry["score"] < self.score) + 1
 
-        # Pre-render score and ranking texts.
-        score_text = f"YOUR TIME: {self.score:.2f}s"
-        rank_text = f"YOUR RANK: {self.ranking}"
-        self.score_surface = self.title_font.render(score_text, True, (0, 0, 0))
-        self.rank_surface = self.body_font.render(rank_text, True, (0, 0, 0))
-        
-        # The prompt text to ask the player to type in their name.
+        self.score = -1
+        self.rounds = -1
+        self.ranking = -1
+        self.high_scores = load_high_scores()
+
+        # Prompt text
         self.prompt_text = "ENTER YOUR NAME: "
         self.prompt_surface = self.prompt_font.render(self.prompt_text, True, (0, 0, 0))
 
@@ -59,21 +51,26 @@ class NameEntryScene(Scene):
     def handle_events(self, events) -> None:
         for ev in events:
             if ev.type == pygame.KEYDOWN:
+                if ev.key == pygame.K_ESCAPE:
+                    self._sound_player.play_menu_click()
+                    self._next_state = State.MAIN_MENU
                 if ev.key == pygame.K_RETURN:
-                    if self.player_name.strip() != "":
-                        new_entry = {"name": self.player_name.strip(), "score": self.score}
-                        # Append the new entry to the complete list (saving all scores)
-                        self.high_scores.append(new_entry)
-                        with open(HIGH_SCORES_FILE, "w") as f:
-                            json.dump(self.high_scores, f, indent=4)
-                        # Also store the recent entry to shared_data for the high scores screen.
-                        self.shared_data["recent_entry"] = new_entry
-                    self.set_next_state()
+                    # Only submit if name length >= 2
+                    if 2 <= len(self.player_name) <= 12:
+                        name = self.player_name.strip()
+                        if name:
+                            self._save_score_entry(name)
+                        self.set_next_state()
+                    # else: ignore submit
                 elif ev.key == pygame.K_BACKSPACE:
+                    # Remove last character
                     self.player_name = self.player_name[:-1]
                 else:
-                    self.player_name += ev.unicode
-
+                    # Only allow alphabetic chars, up to max length 12
+                    char = ev.unicode
+                    if char.isalpha() and len(self.player_name) < 12:
+                        self.player_name += char
+                    # else: ignore invalid character
 
     def handle_mqtt(self) -> None:
         """Handle incoming MQTT messages."""
@@ -81,16 +78,57 @@ class NameEntryScene(Scene):
             topic, msg = self._mqtt_client.pop_queue()
             self.set_next_state()
 
+    def _save_score_entry(self, name: str) -> None:
+        """Merge the new score in, drop any duplicate name with a worse time, and write out."""
+        new_entry = {"name": name, "rounds": self.rounds, "score": self.score}
+
+        found = False
+        for entry in self.high_scores:
+            if entry["name"] == name:
+                found = True
+                # replace only if strictly better: fewer rounds, or same rounds + faster
+                if (new_entry["rounds"], new_entry["score"]) < (entry["rounds"], entry["score"]):
+                    entry["rounds"] = new_entry["rounds"]
+                    entry["score"]  = new_entry["score"]
+                break
+
+        if not found:
+            self.high_scores.append(new_entry)
+
+        self.high_scores.sort(key=lambda e: (e["rounds"], e["score"]))
+
+        with open(HIGH_SCORES_FILE, "w") as f:
+            json.dump(self.high_scores, f, indent=4)
+
+        survivor = next(e for e in self.high_scores if e["name"] == name)
+        self.shared_data["recent_entry"] = survivor
+
     def set_next_state(self) -> Optional[State]:
         self._sound_player.play_menu_click()
         self._next_state = State.HIGH_SCORES
 
     def update(self, dt: float) -> Optional[State]:
-        # No blinking timers; simply return the next state when set.
         return self._next_state
 
     def draw(self, screen: pygame.Surface) -> None:
+        self.rounds = self.shared_data["rounds"]
+        self.score = self.shared_data["score"]
+        def is_better(e):
+            return (e["rounds"], e["score"]) < (self.rounds, self.score)
+        self.ranking = sum(1 for entry in self.high_scores if is_better(entry)) + 1
+
+        rounds_text = f"NUM ROUNDS: {self.rounds}"
+        score_text = f"TIME: {self.score:.2f}"
+        rank_text = f"YOUR RANK: {self.ranking}"
+        self.rounds_surface = self.title_font.render(rounds_text, True, (0, 0, 0))
+        self.score_surface = self.title_font.render(score_text, True, (0, 0, 0))
+        self.rank_surface = self.body_font.render(rank_text, True, (0, 0, 0))
+
         screen.blit(self.background, (0, 0))
+        # Draw the rounds at the top center.
+        score_x = (1920 - self.rounds_surface.get_width()) // 2
+        score_y = 200
+        screen.blit(self.rounds_surface, (score_x, score_y))
         # Draw the score at the top center.
         score_x = (1920 - self.score_surface.get_width()) // 2
         score_y = 350
@@ -110,12 +148,15 @@ class NameEntryScene(Scene):
         # Reload data when the scene is reactivated.
         self._next_state = None
         self.player_name = ""
-        self.score = self.shared_data.get("score", 0.0)
+        self.score = 100
+        self.rounds = 100
         self.high_scores = load_high_scores()
-        self.ranking = sum(1 for entry in self.high_scores if entry["score"] < self.score) + 1
-        
-        score_text = f"YOUR SCORE: {self.score:.2f}"
+        self.ranking = sum(1 for entry in self.high_scores if (entry["rounds"], entry["score"]) < (self.rounds, self.score)) + 1
+
+        rounds_text = f"NUM ROUNDS: {self.rounds}"
+        score_text = f"TIME: {self.score:.2f}"
         rank_text = f"YOUR RANK: {self.ranking}"
+        self.rounds_surface = self.title_font.render(rounds_text, True, (0, 0, 0))
         self.score_surface = self.title_font.render(score_text, True, (0, 0, 0))
         self.rank_surface = self.body_font.render(rank_text, True, (0, 0, 0))
 

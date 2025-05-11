@@ -94,11 +94,10 @@ class GameScene(Scene):
         self._init_state()
         self._init_visualization_cache()
 
-        # --- NEW: selection‐edge detector history ---
         self._prev_selected: list[bool] = []
 
-        # # finally, generate cars (this also resets _prev_selected)
-        # self.generate_new_population()
+        self.auto_transition_delay = 2000
+        self._finish_transition_start = None
 
     def _init_display(self):
         """Initialize display settings based on the *virtual* 1920×1080 surface."""
@@ -331,6 +330,7 @@ class GameScene(Scene):
         self.cars_driving    = True
         self.finish_line_crossed = False
         self.finish_time     = None
+        self._finish_transition_start = None
         self._crashed_sound_played.clear()
         self._prev_selected  = [car.selected for car in self.cars]
 
@@ -510,20 +510,25 @@ class GameScene(Scene):
             # Press SPACE for next generation"
         )
 
-        # Draw restart instruction
-        restart_text = self.font.render("(r) restart", True, (255, 255, 255))
-        screen.blit(restart_text, (20, self.height - 120))
+        # Draw Finishd
+        finished_text = "Finished!"
+
+        # # Draw restart instruction
+        # restart_text = self.font.render("(r) restart", True, (255, 255, 255))
+        # screen.blit(restart_text, (20, self.height - 120))
 
         # Draw exit instruction
         exit_text = self.font.render("(esc) exit", True, (255, 255, 255))
-        screen.blit(exit_text, (20, self.height - 160))
+        screen.blit(exit_text, (20, self.height - 140))
 
-        # Draw next instruction
-        next_text = self.font.render("(space) next", True, (255, 255, 255))
-        screen.blit(next_text, (20, self.height - 80))
 
         # Countdown from 5 to GO
-        if self.countdown:
+        if self.finish_line_crossed:
+            txt = finished_text
+            _, rect = self.font_ft.render(txt, (255,255,255), size=36)
+            center = (self.width//2 - rect.width//2, self.height//2 - rect.height//2)
+            self._draw_text_with_outline(screen, self.font_ft, txt, center, size=36)
+        elif self.countdown:
             if self.countdown:
                 txt = self.countdown_text
                 _, rect = self.font_go_ft.render(txt, (255,255,255), size=72)
@@ -550,7 +555,12 @@ class GameScene(Scene):
                 elif self.countdown_text == "GO!":
                     self.countdown = False
         else:
-            # draw the “Press SPACE…” line with the same tiny outline
+            if not self.cars_driving:
+                # Draw next instruction
+                next_text = self.font.render("(space) next round", True, (255, 255, 255))
+                screen.blit(next_text, (20, self.height - 80))
+                # draw the “Press SPACE…” line with the same tiny outline
+            
             txt = instructions
             _, rect = self.font_ft.render(txt, (255,255,255), size=36)
             center = (self.width//2 - rect.width//2, self.height//2 - rect.height//2)
@@ -576,14 +586,6 @@ class GameScene(Scene):
                 if event.key == pygame.K_ESCAPE:
                     self._next_state = State.MAIN_MENU
                 elif event.key == pygame.K_SPACE:
-                    if self.finish_line_crossed:
-                        self._next_state = State.NAME_ENTRY
-                        score = 0 if self.finish_time is None else self.finish_time
-                        score /= GAME_RENDER_FPS
-                        self.shared_data["score"] = score
-                        self._sound_player.stop_game_background_music()
-                        self._mqtt_client.publish_message(message=LedCtrl(mode=LedMode.INIT).serialise(), topic=LedCtrl.topic)
-                        time.sleep(2)
                     self._handle_space_key()
                 elif event.key == pygame.K_m:
                     self.show_mean = not self.show_mean
@@ -659,8 +661,29 @@ class GameScene(Scene):
             self.current_step += steps
             self._check_for_finish(self.current_step)
 
-        # 4) --- NEW: after all events & sim logic, catch any new selections ---
         self._check_selection_sounds()
+
+        if self.finish_line_crossed and not self.cars_driving:
+            now = pygame.time.get_ticks()
+            if self._finish_transition_start is None:
+                self._finish_transition_start = now
+            elif now - self._finish_transition_start >= self.auto_transition_delay:
+                # time’s up: push score into shared_data and go to NameEntryScene
+                score = 0 if self.finish_time is None else self.finish_time
+                score /= GAME_RENDER_FPS
+                self.shared_data["score"] = score
+                self.shared_data["rounds"] = self.generation
+                # clean up any music/LEDs
+                self._sound_player.stop_game_background_music()
+                self._mqtt_client.publish_message(
+                    message=LedCtrl(mode=LedMode.INIT).serialise(),
+                    topic=LedCtrl.topic
+                )
+                self._next_state = State.NAME_ENTRY
+
+        if self._next_state == State.MAIN_MENU:
+            self._sound_player.stop_game_background_music()
+            self._sound_player.stop_car_sounds()
 
         # 5) Return next state as before
         return self._next_state

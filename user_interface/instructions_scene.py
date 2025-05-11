@@ -41,8 +41,16 @@ class InstructionsScene(Scene):
 
     def handle_events(self, events) -> None:
         for ev in events:
-            # Advance on any mouse click OR any key press
-            if ev.type == pygame.MOUSEBUTTONDOWN or ev.type == pygame.KEYDOWN:
+            if ev.type == pygame.KEYDOWN:
+                if ev.key == pygame.K_ESCAPE:
+                    # go back to main menu
+                    self._sound_player.play_menu_click()
+                    self._next_state = State.MAIN_MENU
+                else:
+                    # any other key: start the game
+                    self.set_next_state()
+            elif ev.type == pygame.MOUSEBUTTONDOWN:
+                # clicking also starts the game
                 self.set_next_state()
 
     def handle_mqtt(self) -> None:
