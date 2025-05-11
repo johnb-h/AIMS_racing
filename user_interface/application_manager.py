@@ -162,10 +162,12 @@ class ApplicationManager:
         pygame.quit()
 
     def _change_scene(self, new_state: State) -> None:
-        """
-        Fade out the current scene, switch to `new_state`, then fade in.
-        """
         self._crossfade_transition(new_state)
+
+        # ← right after the fade: if we’re entering the game, stop any menu music
+        if new_state == State.GAME:
+            self._sound_player.stop_menu_music()
+
         self._scene_start_ticks = pygame.time.get_ticks()
 
     def _render_current_frame(self) -> None:

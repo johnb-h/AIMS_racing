@@ -37,14 +37,27 @@ GAME_START_WAIT_TIME = 2.0
 
 # Sounds
 
+ASSETS_DIR = "./assets"
+MENU_MUSIC_DIR = "./assets/menu_music"
+BUTTON_SOUNDS_DIR = "./assets/button_sounds"
 STARTING_MENU_MUSIC_FILE = "race_start.wav"
 SECONDARY_MENU_MUSIC_FILE = "main_menu.wav"
-MENU_MUSIC_DIR = "./assets/menu_music"
-ASSETS_DIR = "./assets"
 MENU_CLICK_SOUND_FILE = "menu_click.wav"
 GAME_START_SOUND_FILE = "game_start.wav"
 GAME_BACKGROUND_MUSIC_FILE = "snowboarding.wav"
 RACE_BEEP_1_SOUND_FILE = "race_beep_1.wav"
 RACE_BEEP_2_SOUND_FILE = "race_beep_2.wav"
+CAR_RACE_SOUND_FILE = "car_sound.wav"
+CAR_CRASH_1_SOUND_FILE = "crash_1.wav"
+LOW_G_SOUND_FILE = "low_g.wav"
+LOW_A_SOUND_FILE = "low_a.wav"
+LOW_BFLAT_SOUND_FILE = "low_bflat.wav"
+C_SOUND_FILE = "c.wav"
+D_SOUND_FILE = "d.wav"
+EFLAT_SOUND_FILE = "eflat.wav"
+F_SOUND_FILE = "f.wav"
+G_SOUND_FILE = "g.wav"
+A_SOUND_FILE = "a.wav"
+HIGH_BFLAT_SOUND_FILE = "high_bflat.wav"
 
 MENU_MUSIC_CROSSFADE = 3

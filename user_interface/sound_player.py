@@ -1,6 +1,7 @@
 import pygame
 import random
 import os
+import time
 
 from user_interface.constants import (
     ASSETS_DIR,
@@ -13,6 +14,19 @@ from user_interface.constants import (
     GAME_BACKGROUND_MUSIC_FILE,
     RACE_BEEP_1_SOUND_FILE,
     RACE_BEEP_2_SOUND_FILE,
+    CAR_RACE_SOUND_FILE,
+    CAR_CRASH_1_SOUND_FILE,
+    BUTTON_SOUNDS_DIR,
+    LOW_G_SOUND_FILE,
+    LOW_A_SOUND_FILE,
+    LOW_BFLAT_SOUND_FILE,
+    C_SOUND_FILE,
+    D_SOUND_FILE,
+    EFLAT_SOUND_FILE,
+    F_SOUND_FILE,
+    G_SOUND_FILE,
+    A_SOUND_FILE,
+    HIGH_BFLAT_SOUND_FILE,
 )
 
 class SoundPlayer:
@@ -43,11 +57,35 @@ class SoundPlayer:
         self._game_background_music = self._load_sound(GAME_BACKGROUND_MUSIC_FILE)
         self._race_beep_1_sound = self._load_sound(RACE_BEEP_1_SOUND_FILE)
         self._race_beep_2_sound = self._load_sound(RACE_BEEP_2_SOUND_FILE)
+        self._car_race_sound = self._load_sound(CAR_RACE_SOUND_FILE)
+        self._car_crash_1_sound = self._load_sound(CAR_CRASH_1_SOUND_FILE)
+        self._button_sounds = self._load_button_sounds()
+        self._game_background_music_playing = False
 
     def _load_sound(self, file_path) -> pygame.mixer.Sound:
         menu_click_file_path = os.path.join(ASSETS_DIR, file_path)
         return pygame.mixer.Sound(menu_click_file_path)
 
+    def _load_button_sounds(self) -> list[pygame.mixer.Sound]:
+        sound_files = [
+            LOW_G_SOUND_FILE,
+            LOW_A_SOUND_FILE,
+            LOW_BFLAT_SOUND_FILE,
+            C_SOUND_FILE,
+            D_SOUND_FILE,
+            EFLAT_SOUND_FILE,
+            F_SOUND_FILE,
+            G_SOUND_FILE,
+            A_SOUND_FILE,
+            HIGH_BFLAT_SOUND_FILE,
+        ]
+        button_sounds = []
+        for sound_file in sound_files:
+            sound_path = os.path.join(BUTTON_SOUNDS_DIR, sound_file)
+            button_sounds.append(
+                pygame.mixer.Sound(sound_path)
+            )
+        return button_sounds
 
     def _load_next_menu_sound(self) -> pygame.mixer.Sound:
         """
@@ -122,10 +160,13 @@ class SoundPlayer:
         self._game_start_sound.play()
 
     def play_game_background_music(self) -> None:
-        self._game_background_music.set_volume(0.3)
-        self._game_background_music.play()
+        if not self._game_background_music_playing:
+            self._game_background_music_playing = True
+            self._game_background_music.set_volume(0.3)
+            self._game_background_music.play()
 
     def stop_game_background_music(self) -> None:
+        self._game_background_music_playing = False
         self._game_background_music.stop()
 
     def play_race_beep_1(self) -> None:
@@ -133,4 +174,20 @@ class SoundPlayer:
 
     def play_race_beep_2(self) -> None:
         self._race_beep_2_sound.play()
+
+    def play_car_sounds(self) -> None:
+        self._car_race_sound.play()
+
+    def stop_car_sounds(self) -> None:
+        self._car_race_sound.stop()
+
+    def play_car_crash_1(self) -> None:
+        self._car_crash_1_sound.set_volume(0.5)
+        self._car_crash_1_sound.play()
+
+    def stop_car_crash_1(self) -> None:
+        self._car_crash_1_sound.stop()
+
+    def play_button_sound(self, note_idx) -> None:
+        self._button_sounds[note_idx].play()
 

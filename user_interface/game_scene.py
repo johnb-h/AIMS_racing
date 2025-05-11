@@ -17,8 +17,6 @@ from user_interface.sound_player import SoundPlayer
 
 from evolution.evolution import CarEvolution
 from user_interface.constants import (
-    CAR_LENGTH,
-    CAR_WIDTH,
     GAME_RENDER_FPS,
     SIMULATION_FPS,
     WINDOW_HEIGHT_IN_M,
@@ -28,7 +26,6 @@ from user_interface.constants import (
 )
 from user_interface.scene import Scene
 from user_interface.states import State
-from user_interface.utils import WorldVector2
 
 BACKGROUND_COLOR = (0, 102, 16)
 TRACK_COLOR = (50, 50, 50)
@@ -73,6 +70,7 @@ class GameScene(Scene):
                 (255, 0, 0)       # Red
             ]
             self.car_colours += self.car_colours
+        self._crashed_sound_played = set()
 
         self.crashed_time = None
         self.waiting_for_start = True
@@ -84,17 +82,23 @@ class GameScene(Scene):
         self.font_ft  = pygame.freetype.Font("./assets/joystix_monospace.ttf", 36)
         self.font_go_ft = pygame.freetype.Font("./assets/joystix_monospace.ttf", 100)
 
-        # Load the F1 car sprite
-        self.f1_car_sprite = pygame.image.load("assets/cleaned_f1.tiff").convert_alpha()
+        # Load sprites & backgrounds
+        self.f1_car_sprite   = pygame.image.load("assets/cleaned_f1.tiff").convert_alpha()
         self.track_background = pygame.image.load("assets/Background5_1920_1080.png").convert_alpha()
-        self.background = pygame.image.load("assets/Background3_1920_1080.png").convert_alpha()
+        self.background       = pygame.image.load("assets/Background3_1920_1080.png").convert_alpha()
 
+        # Build everything
         self._init_display()
         self._init_track()
         self._init_evolution()
         self._init_state()
         self._init_visualization_cache()
-        self.generate_new_population()
+
+        # --- NEW: selection‐edge detector history ---
+        self._prev_selected: list[bool] = []
+
+        # # finally, generate cars (this also resets _prev_selected)
+        # self.generate_new_population()
 
     def _init_display(self):
         """Initialize display settings based on the *virtual* 1920×1080 surface."""
@@ -307,15 +311,29 @@ class GameScene(Scene):
 
     def generate_new_population(self):
         """Generate and initialize a new population of cars."""
+
+        # ─── reset the countdown/start flags for this generation ───
+        self.start_wait_time   = pygame.time.get_ticks()
+        self.countdown         = True
+        self.countdown_time    = self.start_wait_time
+        self.countdown_text    = ""
+
+        # (re-)play background music if you like
+        self._sound_player.play_game_background_music()
+
+        # now rebuild the cars as before
         self.cars = [
             Car(positions=traj, color=color)
             for traj, color in zip(self.evolution.ask(), self.car_colours)
         ]
-        self.current_step = 0
-        self.crashed_time = None
-        self.cars_driving = True
+        self.current_step    = 0
+        self.crashed_time    = None
+        self.cars_driving    = True
         self.finish_line_crossed = False
-        self.finish_time = None
+        self.finish_time     = None
+        self._crashed_sound_played.clear()
+        self._prev_selected  = [car.selected for car in self.cars]
+
 
     def _update_mean_trajectory(self):
         """Update the cached mean trajectory visualization."""
@@ -452,7 +470,12 @@ class GameScene(Scene):
             if car.selected:
                 pygame.draw.rect(trajectory_surface, (0, 255, 0), rotated_car_rect, width=2)
 
+            if crashed and max_step == crash_step and i not in self._crashed_sound_played:
+                self._sound_player.play_car_crash_1()
+                self._crashed_sound_played.add(i)
+
         if all_cars_crashed:
+            self._sound_player.stop_car_sounds()
             self.cars_driving = False
             if self.crashed_time is None:
                 self.crashed_time = self.current_step
@@ -515,6 +538,7 @@ class GameScene(Scene):
                     self._sound_player.play_race_beep_1()
                     self.countdown_text = "3"
                 elif self.countdown_text == "3":
+                    self._sound_player.play_car_sounds()
                     self._sound_player.play_race_beep_1()
                     self.countdown_text = "2"
                 elif self.countdown_text == "2":
@@ -608,20 +632,23 @@ class GameScene(Scene):
                     ].selected
 
     def update(self, dt):
-        # 1) Pre-countdown wait
+        # 1) Pre‐countdown wait
         if self.waiting_for_start:
             now = pygame.time.get_ticks()
             if now - self.start_wait_time >= GAME_START_WAIT_TIME * 1000:
-                # begin countdown
                 self.waiting_for_start = False
                 self.countdown = True
                 self.countdown_time = now
                 self.countdown_text = ""
             else:
+                # even during the initial pause we still want to catch selects
+                self._check_selection_sounds()
                 return self._next_state
 
-        # 2) If countdown is running, skip simulation stepping
+        # 2) If we're in the countdown, skip simulation stepping
         if self.countdown:
+            # allow selection sounds during countdown too
+            self._check_selection_sounds()
             return self._next_state
 
         # 3) Normal simulation stepping
@@ -631,6 +658,12 @@ class GameScene(Scene):
         if steps:
             self.current_step += steps
             self._check_for_finish(self.current_step)
+
+        # 4) --- NEW: after all events & sim logic, catch any new selections ---
+        self._check_selection_sounds()
+
+        # 5) Return next state as before
+        return self._next_state
 
     def draw(self, screen):
         # draw background & track
@@ -657,7 +690,7 @@ class GameScene(Scene):
         self._init_evolution()
         self._init_visualization_cache()
         self.generation = 1
-        # self._sound_player.play_game_background_music()
+        self._sound_player.play_game_background_music()
         if self._executor is not None:
             self._load_future = self._executor.submit(self.generate_new_population)
 
@@ -704,3 +737,15 @@ class GameScene(Scene):
         o_surf.blit(text_surf, (outline_width, outline_width))
         # finally, blit to your target surface, offset so it's centered at pos
         surf.blit(o_surf, (pos[0] - outline_width, pos[1] - outline_width))
+
+    def _check_selection_sounds(self):
+        """
+        Play a button‐note whenever a car flips from unselected → selected.
+        This runs once per frame, after any events (keyboard, mouse or MQTT).
+        """
+        for i, car in enumerate(self.cars):
+            if car.selected and not self._prev_selected[i]:
+                # fire the note for car index i
+                self._sound_player.play_button_sound(i)
+            # update history
+            self._prev_selected[i] = car.selected
