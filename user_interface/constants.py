@@ -60,5 +60,6 @@ F_SOUND_FILE = "f.wav"
 G_SOUND_FILE = "g.wav"
 A_SOUND_FILE = "a.wav"
 HIGH_BFLAT_SOUND_FILE = "high_bflat.wav"
+KEY_PRESS_SOUND_FILE = "swoosh.wav"
 
 MENU_MUSIC_CROSSFADE = 3

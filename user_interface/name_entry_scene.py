@@ -69,6 +69,7 @@ class NameEntryScene(Scene):
                     # Only allow alphabetic chars, up to max length 12
                     char = ev.unicode
                     if char.isalpha() and len(self.player_name) < 12:
+                        self._sound_player.play_key_press_sound()
                         self.player_name += char
                     # else: ignore invalid character
 
@@ -76,7 +77,6 @@ class NameEntryScene(Scene):
         """Handle incoming MQTT messages."""
         if not self._mqtt_client.queue_empty():
             topic, msg = self._mqtt_client.pop_queue()
-            self.set_next_state()
 
     def _save_score_entry(self, name: str) -> None:
         """Merge the new score in, drop any duplicate name with a worse time, and write out."""

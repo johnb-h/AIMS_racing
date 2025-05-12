@@ -1,5 +1,5 @@
 {
-  "broker": "10.200.56.30",
+  "broker": "localhost",
   "port": 1883,
   "username": "",
   "password": "",

@@ -27,6 +27,7 @@ from user_interface.constants import (
     G_SOUND_FILE,
     A_SOUND_FILE,
     HIGH_BFLAT_SOUND_FILE,
+    KEY_PRESS_SOUND_FILE,
 )
 
 class SoundPlayer:
@@ -59,6 +60,7 @@ class SoundPlayer:
         self._race_beep_2_sound = self._load_sound(RACE_BEEP_2_SOUND_FILE)
         self._car_race_sound = self._load_sound(CAR_RACE_SOUND_FILE)
         self._car_crash_1_sound = self._load_sound(CAR_CRASH_1_SOUND_FILE)
+        self._key_press_sound = self._load_sound(KEY_PRESS_SOUND_FILE)
         self._button_sounds = self._load_button_sounds()
         self._game_background_music_playing = False
 
@@ -190,4 +192,7 @@ class SoundPlayer:
 
     def play_button_sound(self, note_idx) -> None:
         self._button_sounds[note_idx].play()
+
+    def play_key_press_sound(self) -> None:
+        self._key_press_sound.play()
 

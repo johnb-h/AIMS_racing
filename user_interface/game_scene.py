@@ -1,6 +1,6 @@
 import math
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor, Future
 from typing import List, Optional, Tuple
@@ -37,6 +37,7 @@ class Car:
     selected: bool = False
     color: Tuple[int, int, int] = (255, 255, 255)
     last_position: Tuple[float, float] = (0, 0)
+    center_positions: List[Tuple[int, int]] = field(default_factory=list)
 
 
 class GameScene(Scene):
@@ -80,7 +81,7 @@ class GameScene(Scene):
         self.countdown_text = ""
         self.font    = pygame.font.Font("./assets/joystix_monospace.ttf", 36)
         self.font_ft  = pygame.freetype.Font("./assets/joystix_monospace.ttf", 36)
-        self.font_go_ft = pygame.freetype.Font("./assets/joystix_monospace.ttf", 100)
+        self.font_go_ft = pygame.freetype.Font("./assets/joystix_monospace.ttf", 36)
 
         # Load sprites & backgrounds
         # Load the F1 car sprite
@@ -371,6 +372,7 @@ class GameScene(Scene):
                     points,
                     2,
                 )
+
         self.last_generation = self.generation
 
     def _check_for_finish(self, up_to_step: int) -> bool:
@@ -390,117 +392,187 @@ class GameScene(Scene):
         return False
 
     def _draw_cars(self, screen):
-        """Draw all car trajectories and current positions."""
-        trajectory_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-
-        # First check for finish line crossing
-        self._check_for_finish(self.current_step)
-
-        all_cars_crashed = True
-
-        # Then draw cars and handle crashes
+        """Draw selection circles, dashed trajectories, then cars + index labels on top."""
+        # 1) Precompute rotated sprites and rects for every car
+        car_draw_info: list[tuple[int, Car, pygame.Surface, pygame.Rect]] = []
         for i, car in enumerate(self.cars):
-
-            car_sprite = self.index_to_sprite[i]
-
-            if len(car.positions) <= 1:
+            if not car.positions:
                 continue
 
-            # Get car status
-            crashed = (
-                self.evolution.displayed_crashed[i]
-                if hasattr(self.evolution, "displayed_crashed")
-                else False
+            # Determine which step to draw at
+            max_step = min(
+                self.current_step + 1,
+                getattr(self.evolution, "displayed_crash_steps", [len(car.positions)])[i],
+                self.finish_time if self.finish_time is not None else self.current_step + 1
             )
-            crash_step = (
-                self.evolution.displayed_crash_steps[i]
-                if hasattr(self.evolution, "displayed_crash_steps")
-                else len(car.positions)
-            )
-            all_cars_crashed = all_cars_crashed and crash_step < self.current_step
+            if max_step <= 0:
+                continue
 
-            # Determine how much of trajectory to draw
-            max_step = self.current_step + 1
-            max_step = min(max_step, crash_step)
-            if self.finish_line_crossed:
-                max_step = min(max_step, self.finish_time)
+            # Compute orientation
+            prev = car.positions[max_step - 2] if max_step >= 2 else car.positions[0]
+            curr = car.positions[max_step - 1]
+            dx, dy = curr[0] - prev[0], curr[1] - prev[1]
+            angle = math.atan2(dy, dx)
 
-            car.last_position = car.positions[max_step - 1]
-            positions = car.positions[:max_step]
+            # Prepare the sprite
+            sprite = self.f1_car_sprite
+            scaled = pygame.transform.scale_by(sprite, self.track_scale * SPRITE_SCALE_MULTIPLIER)
+            colored = scaled.copy()
+            colored.fill(car.color, special_flags=pygame.BLEND_RGBA_MULT)
+            rotated = pygame.transform.rotate(colored, -math.degrees(angle) + 90)
 
-            # Draw trajectory
-            if len(positions) >= 2:
-                # Create a translucent color by adding alpha to the car's color
-                translucent_color = (*car.color, 64)  # 64 is 25% opacity
-                pygame.draw.lines(trajectory_surface, translucent_color, False, positions, 2)
+            # Compute its blit‐rect (pivot around rear axle)
+            rear_off = pygame.Vector2(scaled.get_width() / 2, 0).rotate_rad(angle)
+            rear_pos = pygame.Vector2(curr) - rear_off
+            rrect = rotated.get_rect(center=(int(rear_pos.x), int(rear_pos.y)))
 
-            # Draw current position marker
-            if positions:
-                current_pos = positions[-1]
-                if (
-                    0 <= current_pos[0] <= self.width
-                    and 0 <= current_pos[1] <= self.height
-                ):
-                    if len(positions) > 1:
-                        prev_pos = positions[-2]
-                        dx, dy = (
-                            current_pos[0] - prev_pos[0],
-                            current_pos[1] - prev_pos[1],
-                        )
-                        angle = np.arctan2(dy, dx)
+            # record the true on‐screen center of the sprite
+            car.center_positions.append((rrect.centerx, rrect.centery))
 
-                        scaled_car = pygame.transform.scale_by(
-                            car_sprite,
-                            self.track_scale * SPRITE_SCALE_MULTIPLIER,
-                        )
+            car_draw_info.append((i, car, rotated, rrect))
 
-                        # Create a colored version of the car
-                        colored_car = scaled_car.copy()
-                        colored_car.fill(car.color, special_flags=pygame.BLEND_RGBA_MULT)
+        # 2) Create our four layers
+        selection_layer  = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        trajectory_layer = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        car_layer        = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        number_layer     = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
 
-                        # Calculate the rear axle position (pivot point for rotation)
-                        rear_axle_offset = pygame.Vector2(
-                            scaled_car.get_width() / 2, 0  # Use the actual scaled width
-                        )
-                        rear_axle_offset = rear_axle_offset.rotate_rad(angle)
-                        rear_axle_position = current_pos - rear_axle_offset
+        # Prepare one circle surface of fixed size
+        selection_circle_radius = 40
+        circle_surf = pygame.Surface(
+            (selection_circle_radius*2, selection_circle_radius*2),
+            pygame.SRCALPHA
+        )
+        pygame.draw.circle(
+            circle_surf,
+            (255, 255, 255, 128),  # semi-transparent white
+            (selection_circle_radius, selection_circle_radius),
+            selection_circle_radius,
+        )
 
-                        # Rotate the car surface based on the direction angle
-                        # Add 90 degrees to correct the initial orientation
-                        rotated_car = pygame.transform.rotate(
-                            colored_car,
-                            -math.degrees(angle) + 90
-                        )
-
-                        # Get the rectangle of the rotated car for correct positioning
-                        rotated_car_rect = rotated_car.get_rect()
-                        rotated_car_rect.center = (
-                            int(rear_axle_position.x),
-                            int(rear_axle_position.y),
-                        )
-
-                        # Draw the rotated car onto the screen
-                        screen.blit(rotated_car, rotated_car_rect.topleft)
-
-                    # Draw crash marker
-                    if crashed and max_step >= crash_step:
-                        pass
-
-            # Draw selection highlight
+        # 3) Draw circles under every car
+        for _, car, _, rrect in car_draw_info:
+            pos = (rrect.centerx - selection_circle_radius,
+                rrect.centery - selection_circle_radius)
             if car.selected:
-                pygame.draw.rect(trajectory_surface, (0, 255, 0), rotated_car_rect, width=2)
+                selection_layer.blit(circle_surf, pos)
 
-            if crashed and max_step == crash_step and i not in self._crashed_sound_played:
+        # 4) Draw all dashed trajectories on top of the circles,
+        #    now tracing through the sprite centers
+        for i, car in enumerate(self.cars):
+            max_step = min(
+                self.current_step + 1,
+                getattr(self.evolution, "displayed_crash_steps", [len(car.positions)])[i],
+                self.finish_time if self.finish_time is not None else self.current_step + 1
+            )
+            pts = car.center_positions[:max_step]
+            if len(pts) >= 2:
+                self._draw_dashed_line(
+                    trajectory_layer,
+                    (*car.color, 80),
+                    pts,
+                    dash_length=20,
+                    gap_length=12,
+                    width=4,
+                )
+
+        # 5) Draw cars and indices on top (indices go to the number layer)
+        for i, car, rotated, rrect in car_draw_info:
+            # Blit the car sprite
+            car_layer.blit(rotated, rrect.topleft)
+
+            # Index labels in selection phase
+            if not self.cars_driving:
+                self._draw_text_with_outline(
+                    number_layer,
+                    self.font_ft,
+                    str(i),
+                    rrect.center,
+                    fg=(255, 255, 255),
+                    outline_color=(0, 0, 0),
+                    outline_width=3,
+                    size=40,
+                    center=True,
+                )
+
+            # Crash sounds
+            crashed = getattr(self.evolution, "displayed_crashed", [False])[i]
+            crash_step = getattr(self.evolution, "displayed_crash_steps", [float('inf')])[i]
+            if crashed and self.current_step >= crash_step and i not in self._crashed_sound_played:
                 self._sound_player.play_car_crash_1()
                 self._crashed_sound_played.add(i)
 
-        if all_cars_crashed:
+        # 6) Composite everything in the desired order, drawing numbers last
+        screen.blit(selection_layer,  (0, 0))
+        screen.blit(trajectory_layer, (0, 0))
+        screen.blit(car_layer,        (0, 0))
+        screen.blit(number_layer,     (0, 0))
+
+        # 7) If all cars have crashed, handle end-of-race logic
+        if all(
+            getattr(self.evolution, "displayed_crash_steps", [0])[i] < self.current_step
+            for i in range(len(self.cars))
+        ):
             self._sound_player.stop_car_sounds()
             self.cars_driving = False
             if self.crashed_time is None:
                 self.crashed_time = self.current_step
 
-        screen.blit(trajectory_surface, (0, 0))
+
+    def _draw_dashed_line(
+        self,
+        surface: pygame.Surface,
+        color: tuple[int, int, int, int],
+        points: list[tuple[float, float]],
+        dash_length: float = 15,
+        gap_length: float = 10,
+        width: int = 4,
+    ) -> None:
+        """
+        Draw a dashed polyline through `points`, carrying the dash+gap state
+        across segment boundaries so you actually see dashes and gaps.
+        """
+        pattern = [dash_length, gap_length]
+        pat_idx = 0             # 0 = dash phase, 1 = gap phase
+        rem     = pattern[0]    # how much length remains in the current phase
+        drawing = True          # True=drawing dash, False=skipping gap
+
+        prev_x, prev_y = points[0]
+
+        for curr_x, curr_y in points[1:]:
+            dx = curr_x - prev_x
+            dy = curr_y - prev_y
+            seg_rem = math.hypot(dx, dy)
+
+            while seg_rem > 0:
+                step = min(seg_rem, rem)
+                t = step / seg_rem
+                inter_x = prev_x + dx * t
+                inter_y = prev_y + dy * t
+
+                if drawing:
+                    pygame.draw.line(
+                        surface,
+                        color,
+                        (prev_x, prev_y),
+                        (inter_x, inter_y),
+                        width,
+                    )
+
+                # advance along segment
+                prev_x, prev_y = inter_x, inter_y
+                seg_rem -= step
+                rem    -= step
+
+                if rem == 0:
+                    # switch dash↔gap
+                    pat_idx   = (pat_idx + 1) % 2
+                    drawing   = not drawing
+                    rem       = pattern[pat_idx]
+
+            # start next segment
+            prev_x, prev_y = curr_x, curr_y
+
 
     def _draw_ui(self, screen):
         """Draw UI elements including timer and instructions."""
@@ -589,34 +661,30 @@ class GameScene(Scene):
     def handle_events(self, events):
         for event in events:
             if event.type == pygame.MOUSEBUTTONDOWN:
-                mouse_pos = pygame.mouse.get_pos()
-                for car in self.cars:
-                    if not car.positions:
-                        continue
-                    pos = car.last_position
-                    if (
-                        np.sqrt(
-                            (pos[0] - mouse_pos[0]) ** 2 + (pos[1] - mouse_pos[1]) ** 2
-                        )
-                        < 15
-                    ):
-                        car.selected = not car.selected
+                # only allow clicks to toggle selection once the race is done
+                if not self.cars_driving and not self.countdown and not self.waiting_for_start:
+                    mouse_pos = pygame.mouse.get_pos()
+                    for car in self.cars:
+                        if not car.positions:
+                            continue
+                        pos = car.last_position
+                        if ((pos[0] - mouse_pos[0])**2 + (pos[1] - mouse_pos[1])**2)**0.5 < 15:
+                            car.selected = not car.selected
 
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     self._next_state = State.MAIN_MENU
-                elif event.key == pygame.K_SPACE:
+                elif event.key == pygame.K_SPACE or event.key == pygame.K_RETURN:
                     self._handle_space_key()
                 elif event.key == pygame.K_m:
                     self.show_mean = not self.show_mean
                 elif pygame.K_0 <= event.key <= pygame.K_9:
-                    # TODO: Add kill switch or param for max wait
-                    car_index = event.key - pygame.K_0
-                    if car_index < len(self.cars):
-                        self.cars[car_index].selected = not self.cars[
-                            car_index
-                        ].selected
-
+                    # only allow number‐key toggles after the race
+                    if not self.cars_driving and not self.countdown and not self.waiting_for_start:
+                        car_index = event.key - pygame.K_0
+                        if car_index < len(self.cars):
+                            self.cars[car_index].selected = not self.cars[car_index].selected
+ 
     def _handle_space_key(self):
         if self.countdown:
             return
@@ -645,13 +713,13 @@ class GameScene(Scene):
         if not self._mqtt_client.queue_empty():
             topic, msg = self._mqtt_client.pop_queue()
             if RaceCar.topic in topic:
-                race_car = RaceCar()
-                race_car.deserialise(msg)
-                car_index = race_car.id
-                if car_index < len(self.cars):
-                    self.cars[car_index].selected = not self.cars[
-                        car_index
-                    ].selected
+                # only allow MQTT toggles after the race
+                if not self.cars_driving and not self.countdown and not self.waiting_for_start:
+                    race_car = RaceCar()
+                    race_car.deserialise(msg)
+                    car_index = race_car.id
+                    if car_index < len(self.cars):
+                        self.cars[car_index].selected = not self.cars[car_index].selected
 
     def update(self, dt):
         # 1) Pre‐countdown wait
@@ -764,6 +832,7 @@ class GameScene(Scene):
         outline_color: tuple[int,int,int]=(0,0,0),
         outline_width: int=2,
         size: int=0,
+        center=False
     ) -> None:
         # render both fg and outline versions
         text_surf, _    = font.render(text, fg, size=size)          # :contentReference[oaicite:0]{index=0}
@@ -778,8 +847,15 @@ class GameScene(Scene):
                 o_surf.blit(outline_surf, (dx + outline_width, dy + outline_width))
         # blit the white text on top
         o_surf.blit(text_surf, (outline_width, outline_width))
+
+        blit_x = pos[0] - outline_width
+        blit_y = pos[1] - outline_width
+        if center:
+            blit_x = int(pos[0] - o_surf.get_width() / 2)
+            blit_y = int(pos[1] - o_surf.get_height() / 2)
+
         # finally, blit to your target surface, offset so it's centered at pos
-        surf.blit(o_surf, (pos[0] - outline_width, pos[1] - outline_width))
+        surf.blit(o_surf, (blit_x, blit_y))
 
     def _check_selection_sounds(self):
         """
