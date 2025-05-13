@@ -561,9 +561,15 @@ class GameScene(Scene):
                     self._mqtt_client.publish_message(topic=LedCtrl.topic,
                                                      message=LedCtrl(mode=LedMode.RACE_START).serialise())
                     self._sound_player.play_race_beep_1()
+                    self.countdown_text = "5"
+                elif self.countdown_text == "5":
+                    self._sound_player.play_car_sounds()
+                    self._sound_player.play_race_beep_1()
+                    self.countdown_text = "4"
+                elif self.countdown_text == "4":
+                    self._sound_player.play_race_beep_1()
                     self.countdown_text = "3"
                 elif self.countdown_text == "3":
-                    self._sound_player.play_car_sounds()
                     self._sound_player.play_race_beep_1()
                     self.countdown_text = "2"
                 elif self.countdown_text == "2":
