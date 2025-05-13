@@ -433,7 +433,7 @@ class GameScene(Scene):
                 # Create a translucent color by adding alpha to the car's color
                 translucent_color = (*car.color, 64)  # 64 is 25% opacity
                 pygame.draw.lines(trajectory_surface, translucent_color, False, positions, 2)
-
+            rotated_car_rect = None
             # Draw current position marker
             if positions:
                 current_pos = positions[-1]
@@ -487,7 +487,7 @@ class GameScene(Scene):
                         pass
 
             # Draw selection highlight
-            if car.selected:
+            if car.selected and rotated_car_rect is not None:
                 pygame.draw.rect(trajectory_surface, (0, 255, 0), rotated_car_rect, width=2)
 
             if crashed and max_step == crash_step and i not in self._crashed_sound_played:
