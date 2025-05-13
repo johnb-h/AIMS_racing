@@ -99,7 +99,8 @@ class InterfaceManager:
                     button.toggle_light()
                     msg = RaceCar(id=key)
                     self.mqtt_client.publish_message(RaceCar.topic, msg.serialise())
-                    time.sleep(0.1)
+                    while button.check_trigger():
+                        time.sleep(0.05)
             time.sleep(0.05)
 
     def mqtt_loop(self):
@@ -155,9 +156,9 @@ class InterfaceManager:
             time.sleep(0.04)
             for i in range(row_end, row_len):
                 self.buttons[str(i)].toggle_light()
-            time.sleep(0.4)
+            time.sleep(0.04)
 
-        time.sleep(5)
+        time.sleep(1)
         self._all_off()
 
     def stop(self):
