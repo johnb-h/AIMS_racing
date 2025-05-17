@@ -1,18 +1,25 @@
 """
 gpio_controller.py
     Interfaces the GPIO ports on the Raspberry Pi for communication via communication protocol
+Methods
+    GPIOController
+    LightButton
 """
 
 __version__ = '0.0.0'
 __project__ = 'AIMS_racing'
 __tested__ = 'N'
 
+# Standard Packages
 import sys
-
-sys.path.append('../')
-import RPi.GPIO as GPIO
 import time
 from threading import Thread
+
+# Hardware Specific
+import RPi.GPIO as GPIO
+
+# Add file path
+sys.path.append('../')
 
 
 class GPIOController:
@@ -27,7 +34,7 @@ class GPIOController:
     button_pins: list[int]
         A list of button pins
     running: bool
-        Whether or not the Raspberry Pi should be running
+        Whether the Raspberry Pi should be running
 
     ...
     Methods

@@ -3,22 +3,16 @@ interface_manager.py
     Initialises a manager to control the IO of the PI
 """
 
-__version__ = '0.0.0'
-__organization__ = 'MarineAI'
-__project__ = 'AIMS_racing'
-__tested__ = 'N'
-
 # Standard Packages
 import json
-import os
 import time
 import sys
 import threading
 
-sys.path.append("..")
-
 # Non-Standard Packages
 import pandas as pd
+
+sys.path.append("..")
 
 # Relative Imports
 from hardware_interface import MQTTClient, RaceCar, LedCtrl, LedMode
@@ -34,10 +28,15 @@ class InterfaceManager:
     ----------
     buttons: list[LightButton]
         Controls the interacting of buttons on the Pi
+    mqtt_client: MQTTClient
+        Initialised MQTT client
 
     ...
     Methods
     -------
+    hardware_loop
+    mqtt_loop
+    stop
     """
 
     def __init__(self, mqtt_client: MQTTClient, pin_configuration: str):
