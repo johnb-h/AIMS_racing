@@ -1,15 +1,4 @@
 """
 __init__.py
-    description
-Methods
-
-Attributes
-
-Dependencies
-
+    User Interface module
 """
-
-__version__ = '0.0.0'
-__organization__ = 'MarineAI'
-__project__ = 'AIMS_racing'
-__tested__ = 'N'

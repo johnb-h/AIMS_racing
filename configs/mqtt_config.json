@@ -1,5 +1,5 @@
 {
-  "broker": "10.200.56.30",
+  "broker": "127.0.0.1",
   "port": 1883,
   "username": "",
   "password": "",

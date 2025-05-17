@@ -3,10 +3,6 @@ main.py
     Main run file for AIMS racing application
 """
 
-__version__ = '0.0.0'
-__project__ = 'aims_racing'
-__tested__ = 'N'
-
 # Standard Packages
 import argparse
 import sys
