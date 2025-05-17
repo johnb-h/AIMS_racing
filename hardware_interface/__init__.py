@@ -12,9 +12,5 @@ Dependencies
     paho-mqtt
 """
 
-__version__ = '0.0.0'
-__project__ = 'AIMS_racing'
-__tested__ = 'N'
-
 from .communication_protocol import RaceCar, CarStatus, RaceCommunicationProtocol, LedCtrl, LedMode
 from .mqtt_communication import MQTTClient

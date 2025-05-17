@@ -4,25 +4,21 @@ communication_protocol.py
 Methods
     CarStatus
     RaceCommunicationProtocol
+    LedMode
     RaceCar
+    LedCtrl
 """
-
-__version__ = '0.0.0'
-__project__ = 'AIMS_racing'
-__tested__ = 'N'
 
 # Standard Packages
 import json
 from enum import Enum
 
-
 class CarStatus(Enum):
     """Car status Enum for cars"""
-    DEFAULT: int = 0
-    PRERACE: int = 1
-    INRACE: int = 2
-    POSTRACE: int = 3
-
+    DEFAULT = 0
+    PRERACE = 1
+    INRACE = 2
+    POSTRACE = 3
 
 class RaceCommunicationProtocol:
     """
@@ -35,8 +31,6 @@ class RaceCommunicationProtocol:
         Topic header for MQTT communication
     msg_name: str
         Message name for MQTT communication
-    qos: int
-        Quality of service
 
     ...
     Methods
@@ -46,11 +40,10 @@ class RaceCommunicationProtocol:
     deserialise
     """
 
-    def __init__(self, header: str = "", msg_name: str = "", qos: int = 0):
+    def __init__(self, header: str = "", msg_name: str = ""):
         """Constructor for RaceCommunicationProtocol"""
         self.header = header
         self.msg_name = msg_name
-        self.qos = qos
 
     @property
     def header(self) -> str:
@@ -70,40 +63,24 @@ class RaceCommunicationProtocol:
         if isinstance(value, str):
             self._msg_name = value
 
-    @property
-    def qos(self) -> int:
-        return self._qos
-
-    @qos.setter
-    def qos(self, value: int):
-        if isinstance(value, int):
-            self._qos = value
-        else:
-            self._qos = 0
-
-    def serialise(self):
+    def serialise(self) -> str:
         """Serialise communication ready for MQTT publishing"""
         return json.dumps(self.get_dict())
 
-    def get_dict(self):
+    def get_dict(self) -> dict:
         """Returns dictionary representation of the class"""
         return {
-            "MNAME": self.msg_name,
-            "QOS": self.qos,
+            "MNAME": self.msg_name
         }
 
-    def deserialise(self, mqtt_msg: str):
+    def deserialise(self, mqtt_msg: str) -> None:
         """Deserialise received MQTT message"""
         json_msg: dict = json.loads(mqtt_msg)
         if "MNAME" in json_msg:
             self.msg_name = json_msg.get("MNAME")
-        if "QOS" in json_msg:
-            self.qos = json_msg.get("QOS")
-
-
-from enum import Enum
 
 class LedMode(Enum):
+    """LED mode Enum"""
     ALL_OFF = 0
     ALL_ON = 1
     INIT = 2
@@ -117,9 +94,6 @@ class LedCtrl(RaceCommunicationProtocol):
     Attributes
     ----------
     mode: LedMode
-        LED control mode:
-        0: All off
-        1: All on
 
     Methods
     -------
@@ -131,21 +105,14 @@ class LedCtrl(RaceCommunicationProtocol):
     topic: str = "race/led"
     _msg_name: str = "LedCtrl"
 
-    def __init__(self, header: str = "", msg_name: str = "", qos: int = 0, mode: LedMode = LedMode.DEFAULT):
+    def __init__(self, header: str = "", msg_name: str = "", mode: LedMode = LedMode.DEFAULT):
         """Constructor for LedCtrl"""
-        super().__init__(header=header, msg_name=msg_name if msg_name else self._msg_name, qos=qos)
+        super().__init__(header=header, msg_name=msg_name if msg_name else self._msg_name)
         self.mode = mode
 
     @property
     def mode(self):
-        """
-        description
-            LED control mode
-        type
-            LedMode
-        default
-            LedMode.DEFAULT (0)
-        """
+        """Led Mode Enum"""
         return self._mode
 
     @mode.setter
@@ -165,7 +132,7 @@ class LedCtrl(RaceCommunicationProtocol):
         """Returns dictionary representation of the class"""
         d = super().get_dict()
         d.update({
-            "MODE": self.mode.value,
+            "MODE": self.mode.value
         })
         return d
 
@@ -201,23 +168,16 @@ class RaceCar(RaceCommunicationProtocol):
     topic: str = "race/car"
     _msg_name: str = "RaceCar"
 
-    def __init__(self, header: str = "", msg_name: str = "", qos: int = 0, car_status: CarStatus = CarStatus.DEFAULT,
+    def __init__(self, header: str = "", msg_name: str = "", car_status: CarStatus = CarStatus.DEFAULT,
                  id: int = -1):
         """Constructor for RaceCar"""
-        super().__init__(header=header, msg_name=msg_name if msg_name else self._msg_name, qos=qos)
+        super().__init__(header=header, msg_name=msg_name if msg_name else self._msg_name)
         self.car_status = car_status
         self.id = id
 
     @property
     def id(self):
-        """
-        description
-            Car ID number
-        type
-            int
-        default
-            -1
-        """
+        """Car ID number"""
         return self._id
 
     @id.setter
@@ -252,7 +212,7 @@ class RaceCar(RaceCommunicationProtocol):
         d = super().get_dict()
         d.update({
             "STS": self.car_status.value,
-            "ID": self.id,
+            "ID": self.id
         })
         return d
 

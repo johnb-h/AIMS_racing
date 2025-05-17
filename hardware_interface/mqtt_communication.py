@@ -5,13 +5,9 @@ Methods
     MQTTClient
 """
 
-__version__ = '0.0.0'
-__project__ = 'AIMS_racing'
-__tested__ = 'N'
-
-import queue
 # Standard Packages
-import time
+import queue
+from typing import Any
 
 # Non-Standard Packages
 import paho.mqtt.client as mqtt
@@ -142,7 +138,7 @@ class MQTTClient:
         """Returns bool of if queue is empty"""
         return self._msg_queue.empty()
 
-    def pop_queue(self) -> tuple[str, str]:
+    def pop_queue(self) -> Any | None:
         """Pops element from the queue"""
         if not self.queue_empty():
             return self._msg_queue.get()

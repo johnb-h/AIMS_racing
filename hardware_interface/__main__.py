@@ -1,17 +1,7 @@
 """
 __main__.py
-    description
-Methods
-
-Attributes
-
-Dependencies
-
+    Main execution script for hardware interface
 """
-
-__version__ = '0.0.0'
-__project__ = 'AIMS_racing'
-__tested__ = 'N'
 
 # Standard Packages
 import time
@@ -20,7 +10,7 @@ import time
 from hardware_interface import MQTTClient, RaceCar, CarStatus
 
 if __name__ == '__main__':
-    """Example communication using coms protocol and local mqtt client instance"""
+    """Example communication using comms protocol and local mqtt client instance"""
     config: dict = {
         'broker': '127.0.0.1',
         'port': 1883,
